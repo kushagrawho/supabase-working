@@ -729,3 +729,120 @@
 .ov-alert-footer{padding-top:13px;color:var(--muted);font-size:11px}
 @media(max-width:1050px){.ov-lower-grid{grid-template-columns:1fr}}
 @media(max-width:750px){.ov-stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.ov-chart{gap:4px}.ov-chart-value{font-size:8px}}
+
+
+
+/* ==========================================
+   VASUNDHARA LOGIN SCREEN
+========================================== */
+
+#vasundharaLoginScreen {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: #f4f6f8;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 420px;
+    padding: 36px;
+    background: #ffffff;
+    border-radius: 16px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+}
+
+.login-brand {
+    font-size: 25px;
+    font-weight: 800;
+    color: #245c45;
+    margin-bottom: 24px;
+}
+
+.login-card h2 {
+    margin: 0 0 8px;
+    font-size: 25px;
+    color: #1f2937;
+}
+
+.login-subtitle {
+    margin: 0 0 26px;
+    color: #6b7280;
+    font-size: 14px;
+}
+
+.login-card label {
+    display: block;
+    margin: 16px 0 7px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+}
+
+.login-card input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 13px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 15px;
+    outline: none;
+}
+
+.login-card input:focus {
+    border-color: #245c45;
+    box-shadow: 0 0 0 3px rgba(36, 92, 69, 0.1);
+}
+
+#loginButton {
+    width: 100%;
+    margin-top: 22px;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    background: #245c45;
+    color: white;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+#loginButton:hover {
+    background: #194532;
+}
+
+#loginButton:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+.login-error {
+    color: #dc2626;
+    font-size: 13px;
+    min-height: 18px;
+    margin: 10px 0 0;
+}
+
+.login-footer {
+    margin: 22px 0 0;
+    text-align: center;
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+@media (max-width: 480px) {
+    .login-card {
+        padding: 26px 22px;
+    }
+}
+
+
+/* Hide the entire application while authentication is required */
+body.auth-locked > *:not(#vasundharaLoginScreen) {
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
