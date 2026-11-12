@@ -124,12 +124,52 @@ if (key === "reports") return renderProfitExpensePage();
  }
  return `<div class="panel"><h3>${pageInfo[key][0]}</h3><p class="panel-sub">${pageInfo[key][1]}</p><div class="empty-note">Your ${pageInfo[key][0].toLowerCase()} workspace will appear here. Use the quick action to add your first record.</div><button class="small-button" id="placeholderAction">＋ Get started</button></div>`;
 }
-function render(key){
- currentPage=key;$("#crumb").textContent=pageInfo[key][0];$("#pageTitle").textContent=key==="overview"?"Good evening, Admin 👋":pageInfo[key][0];$("#pageSubtitle").textContent=pageInfo[key][1];
- pageContent.innerHTML=key==="overview"?overview():renderModule(key);
- document.querySelectorAll(".nav-item").forEach(b=>b.classList.toggle("active",b.dataset.page===key));
- $("#featureMenu").classList.remove("open");$("#featureButton").setAttribute("aria-expanded","false");
+
+let renderRequestId = 0;
+
+async function render(key) {
+    const requestId = ++renderRequestId;
+
+    currentPage = key;
+
+    $("#crumb").textContent = pageInfo[key][0];
+    $("#pageTitle").textContent =
+        key === "overview" ? "Good evening, Admin 👋" : pageInfo[key][0];
+    $("#pageSubtitle").textContent = pageInfo[key][1];
+
+    document.querySelectorAll(".nav-item").forEach(b =>
+        b.classList.toggle("active", b.dataset.page === key)
+    );
+
+    $("#featureMenu").classList.remove("open");
+    $("#featureButton").setAttribute("aria-expanded", "false");
+
+    if (key === "overview") {
+        pageContent.innerHTML = overview();
+        return;
+    }
+
+    pageContent.innerHTML = `<div class="empty-state">Loading...</div>`;
+
+    try {
+        const content = await renderModule(key);
+
+        // Ignore results from an older page request.
+        if (requestId !== renderRequestId) return;
+
+        pageContent.innerHTML = content ?? "";
+    } catch (error) {
+        if (requestId !== renderRequestId) return;
+
+        console.error("Page loading error:", error);
+        pageContent.innerHTML = `
+            <div class="empty-state">
+                Unable to load this page. Please try again.
+            </div>
+        `;
+    }
 }
+
 document.addEventListener("click",e=>{
  const page=e.target.closest("[data-page]");if(page){render(page.dataset.page);return}
 });

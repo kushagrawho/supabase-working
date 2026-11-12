@@ -44,17 +44,36 @@ function generateCustomerId(customers) {
 }
 
 
-function renderCustomersPage() {
-  const customers = loadCustomers();
 
-  let sales = [];
+async function renderCustomersPage() {
+  // Fetch customers from Supabase.
+  const { data: customerData, error: customerError } =
+    await VasundharaDB.select("customers");
 
-  try {
-    sales = JSON.parse(localStorage.getItem("bizpilot_sales_v1")) || [];
-    if (!Array.isArray(sales)) sales = [];
-  } catch (error) {
-    sales = [];
+  if (customerError) {
+    throw customerError;
   }
+
+  // Fetch the sales fields needed for customer statistics.
+  const { data: salesData, error: salesError } =
+    await VasundharaDB.select("sales", "customer_mobile,date,profit");
+
+  if (salesError) {
+    throw salesError;
+  }
+
+  // Convert database column names into the names used by this page.
+  const customers = (customerData || []).map(customer => ({
+    customerId: customer.customer_id,
+    mobile: customer.mobile,
+    name: customer.name
+  }));
+
+  const sales = (salesData || []).map(sale => ({
+    customerMobile: sale.customer_mobile,
+    date: sale.date,
+    profit: sale.profit
+  }));
 
   const today = new Date();
   today.setHours(23, 59, 59, 999);
@@ -188,9 +207,7 @@ function renderCustomersPage() {
               <th>Profit (last 12 months)</th>
             </tr>
           </thead>
-          <tbody>
-            ${topRows}
-          </tbody>
+          <tbody>${topRows}</tbody>
         </table>
       </div>
     </div>
@@ -201,7 +218,6 @@ function renderCustomersPage() {
           <h3>Customer list</h3>
           <div class="panel-sub">Manage your registered customers</div>
         </div>
-
         <button class="muted-link" id="customerExport">
           Export CSV ↓
         </button>
@@ -214,10 +230,7 @@ function renderCustomersPage() {
           id="customerSearch"
           placeholder="Search by ID, name or mobile number..."
         />
-
-        <span class="panel-sub">
-          ${customers.length} customers
-        </span>
+        <span class="panel-sub">${customers.length} customers</span>
       </div>
 
       <div class="table-wrap">
@@ -231,10 +244,7 @@ function renderCustomersPage() {
               <th>Profit (last 12 months)</th>
             </tr>
           </thead>
-
-          <tbody id="customerTableBody">
-            ${customerRows}
-          </tbody>
+          <tbody id="customerTableBody">${customerRows}</tbody>
         </table>
       </div>
     </div>
@@ -290,8 +300,10 @@ function renderCustomersPage() {
 }
 
 
+
 // Add a customer
-document.addEventListener("submit", function(event) {
+
+document.addEventListener("submit", async function(event) {
   if (event.target.id !== "customerForm") return;
 
   event.preventDefault();
@@ -309,29 +321,41 @@ document.addEventListener("submit", function(event) {
     return;
   }
 
-  const customers = loadCustomers();
+  const submitButton = event.target.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = "Adding...";
 
-  const alreadyExists = customers.some(
-    customer => customer.mobile === mobile
-  );
+  try {
+    const { data, error } = await VasundharaDB.supabase.rpc(
+      "create_customer",
+      {
+        p_mobile: mobile,
+        p_name: name
+      }
+    );
 
-  if (alreadyExists) {
-    toast("This mobile number is already registered.");
-    return;
+    if (error) {
+      if (error.code === "23505") {
+        toast("This mobile number is already registered.");
+      } else {
+        console.error("Customer insert error:", error);
+        toast("Unable to add customer. Please try again.");
+      }
+      return;
+    }
+
+    toast("Customer added successfully.");
+    await render("customers");
+
+  } catch (error) {
+    console.error("Customer error:", error);
+    toast("Unable to add customer. Please check your connection.");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "+ Add customer";
   }
-
-  const newCustomer = {
-    customerId: generateCustomerId(customers),
-    mobile: mobile,
-    name: name
-  };
-
-  customers.push(newCustomer);
-  saveCustomers(customers);
-
-  render("customers");
-  toast("Customer added successfully.");
 });
+
 
 // Search customers
 document.addEventListener("input", function(event) {
