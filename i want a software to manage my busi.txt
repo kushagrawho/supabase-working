@@ -1,0 +1,115 @@
+i want a software to manage my business.
+when i launch the project the webpage which has a button on top right which on clicking displays available features :
+manage customers ,track sales , manage jama/udhar , manage cash/bank , check total net worth , manage committee , track inventory , check profit vs expenses for given duration 
+
+first of all i will specify all the tables that i want to make.
+
+
+when clicked on manage customers from the workspace the webpage should show feature to manage below table and also it should display top 5 customers by their customer id , name , phone and profit given in last 1 year
+customer table:
+customer id should start with vs0001 and auto increment vs0002 and so on 
+customer number which cant be null and duplicate and should be manually entered
+customer name which cant be null but can be duplicate
+last purchase made which will be automatically fetched from the sales table for the foreign key mobile number and the date that is available in the sales coulumn suppose customer bought on 1 jan 25 and 3 march 2026 so last purchase should be 3 march 2026.
+profit coulumn which displays the sum of all the profit the customer has given in last 1 year , suppose in sales table 9289607192 is mentioned 3 times in last 1 year so sum of profits of all the 3 sales will be displayed.
+
+
+sales table:
+
+invoice number:which starts with vs26270001 and auto increment vs26270002 and 2728 when financial year changes and so on, 
+customer mobile number when entered automatically fetches customer name from customer table
+customer name
+date: manually enter date
+item coulumn - here a dropdown should be available when clicked should display the items to select from inventory table like payal/bichiya/supari/lota etcwe can click on the item to select
+quantity - this coulumn should make sure the entered quanity should not exceed the quantity available for the selected item in the inventory table and also once entered the quantity it should update the quantity in inventory table
+weight - manually enter the weight of the item and once entered it should update the weight of the item in the inventory table suppose payal item was 100 grams in inventory table and now i sold 12 grams payal so in sales table 12 grams should be quantity and inventory tables payal quantity should be updated to 88 , make sure weight number should not exceed the weight for the item selected in inventory table
+final amount: which will be the amount taken for selling the selected item
+profit: manually enetr the profit earned on the sale maded
+payment status: 3 options should be available (paid,unpaid or partial payment made for amount x which we can enter)
+payment mode: cash / upi / advance payment (example customer paid 5000 advance so it should fetch the advance amount from jama/udhar for customer with same mobile number and invoice amount is 5500 so the customer has to pay only 500 remaining amount ) / available committee(which fetches the amount the from committee table which displays the total amount once the customer has ussed this committee amount the amount in committtee table shuold be updated like customer has paid 13000 in committee for 13 months and he took 13000 entire committee by buying a product of 23000 he paid 13k through committee and 10k through cash so committee table should update avaiable committee to 0)
+
+
+jama udhar table:
+it should display jama amount as -ve and udhar amount as +ve
+
+customer mobile :which once entered should auto fetch name
+customer name
+amount:manually enter
+status: cleared or uncleared this coulumn keeps checking if udhar/jama is settled or not , suppose customer took 10k udhar on 2nd feb 2026 and at first this table shows uncleared and 10k amount , suppose on 4th july customer paid 5k cash/upi so we will update our cash/upi table with customer phone number and automatically our udhar/jama table will update the amount to 5000 and status uncleared will remain there , suppose on 5th october 2026 customer paid another 5000 via cash/upi and once we update it on cash/upi table it automatically updates the jama/udhar table with amount 5000-5000=0 once the amount is 0 the status will be cleared , same goes for jama case once a sale is made if customer has submitted 50000 in advance and bought an item of 55000 and he paid only 5000 at the time on sale so the jama table should automatically detect the sale that customer with mobile number paid 55000 through 50000 advance and 5000 cash/upi or even udhar.
+
+this page should display the total udhar amount at the last of the page which should include all the uncleared udhar and a jama amount which should include all the jama amount from this table + sum of all the amount from the committee tables available committee column.
+
+cash/upi flow table
+this table should log common cash/upi payments flow
+cash/upi column: this coulumn selected will tell if we are logging cash transaction or upi
+serial number: starts from 1 and auto increment
+amount: manually enter the amount
+purpose: this should have options like sales made ,business expense,house expense,advance payment jama,udhar clearance, cash taken for this transaction like i withdrawn 25000 from atm or cash deposited like i deposited 1000 in bank so my total cash becomes less by 1000 and total bank balance becomes more by 1000, loss if any , other(where i can manually enter the reason).
+
+at the bottom of this page it should show total available cash and total available bank balance.
+
+** total networth which displays all items with weights in my inventory + udhar amount + total avl cash and avl bannk balance - total jama amount including sum of all the available committee amount.
+
+when clicked on committee tab on workspace create a committee option shouldd be there which inputs committe name , number of members , amount per month per member , duration of committee from 1 jan 2026 to 1 march 2027 i have entered this sample but in real use case we can manually enter this).
+
+once a committe is created we can see rectangle bars with + icon to add details of members and the number of bars should be equal to the number of member selected when this committe was created.
+when clicked on bar we can enter customer name and log paid or not , suppose a committee is created in October 2026 and payment due date is 14 of every month so a yellow mark will be displayed on the rectangle bar of this customer which indicates payment is not completed for thi month and once we manually select paid after clicking this rectangle bar the mark will be removed and again rectangle bar will turn green . example- kushagra rectangle bar is displayed and on 13th October he didn't make payment no mark will be dispayed and the bar will be green but on 14 the mark will be displayed on the kushagra rectangle which shows payment isn't made , suppose next month kushagra paid on 1st only so for the rest of the month there will be no mark.
+
+i cant open every committee manually to log paid staus so implement a search functionality at top of the committee webpage where i can search name or number to find the rectangle of customer to update
+
+committee table
+customer number 
+customer name
+available committee: this coulumn sums the amount every month suppose a customer parul is enrolled in a committee of 500/month so every month once the paid status is clicked on parul's rectange this coulumn updates amount+=amount and once the committe amountis used in sales this should be fetched from the sales table the committee amount used in sales table will be deducted from the amount available in this coulumn..
+
+at the last of committee page , total committee amount that we have to give should be displayed which is basically sum of all the coulumns in committee table, it should display any unpaid customer if yellow mark is made after 14th of every month.
+
+once a committee is expired the committee should be marked as closed with red rectangle.
+
+
+compare profits with only house expenses and losses right below the total sales profit box
+and also suppose in a case a customer gave 1000 advance and i logged 1000 cash as advance but later customer said no i
+dont want to buy anythign give my money back so i logged 1000 cash out in others catrgory this should not be counted as
+any effective money out flow so do one thing only count house expense business expense and loss in effective money ou
+to find total revenue vs money out comparison.
+
+also overview page should display:
+a) total sales which is sum of final amount of all invoices of current month , a percentage comparison should be there with related to previous month
+b) total receivables that would be sum of udhaar amount in postive committee monthly contribution of all members in positive
+and any advance payments in negative and unused committee payout in negative so that i can see if i have to give more than
+i have to take or vice versa , this number should be in red when i have to give more and in green when i have to take more
+c)total expenses of house only and loss of current month as compared to previous months hosue expense and loss.
+d) total profit of all the invoices of previous month , suppose its november 26 so this square should display total profit made in october month
+
+ below these 4 small horizontal boxes
+
+ a big rectangle which displays a graph which plots a bar graph of last 12 months profit made month wise so that i can see
+ if i am working right or not.
+
+ on the right side of this rectangle a square box should be there which should notify me about all the active udhaars or unpaid monthly contribution of any committee member.
+
+
+ also when i am launching index.html after 2 to 3 clicks my page becomes non responsive how can I fix this issue.
+ also i have enterd so many test values while testing each module while development how can I remove all the entered 
+ data so that i can start etering actual values for my business.
+
+
+ suppose i want to host this folder remotely so that i can use this sofware from any other location than my laptop
+ with all my databses intact and an authenticator which loads a login page and checks username password then only 
+ i can get access to read write on this software's database.
+ 1) how can I set authenticator
+ 2) how can I host this remotely for free so that my software works efficiently without breaking.
+
+
+
+ Phase	Work
+1. Authentication	Connect Supabase, create login screen, restore sessions and implement logout
+2. Shared database connection	Set up a reusable Supabase client and common database functions
+3. Basic modules	Connect Customers and Inventory
+4. Financial modules	Connect Jama/Udhar and Cash/Bank
+5. Sales	Implement safe, atomic invoice creation and related transactions
+6. Committees	Connect members, payments, draws and payout usage
+7. Dashboards	Connect Overview, Net Worth and Reports
+8. Testing	Test all operations, security and page navigation
+9. Deployment	Configure and deploy the connected application through Vercel
+

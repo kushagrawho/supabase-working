@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vasundhara</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="#" aria-label="Vasundhara home">
+        <span class="brand-mark">VS</span><span>Vasundhara</span>
+      </a>
+      <div class="side-label">WORKSPACE</div>
+      <button class="nav-item active" data-page="overview"><span>▦</span> Overview</button>
+      <button class="nav-item" data-page="customers"><span>♙</span> Manage customers</button>
+      <button class="nav-item" data-page="sales"><span>↗</span> Track sales</button>
+      <button class="nav-item" data-page="jama"><span>⇄</span> Jama / Udhar</button>
+      <button class="nav-item" data-page="cash"><span>▣</span> Cash / Bank</button>
+      <button class="nav-item" data-page="networth"><span>◈</span> Total net worth</button>
+      <button class="nav-item" data-page="committee"><span>◎</span> Committee</button>
+      <button class="nav-item" data-page="inventory"><span>▤</span> Inventory</button>
+      <button class="nav-item" data-page="reports"><span>▥</span> Profit vs expenses</button>
+      <div class="sidebar-bottom"><span class="avatar">A</span><div><b>Kushagra</b><small>Business owner</small></div></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark">B</span> Vasundhara</div>
+        <div class="breadcrumb">Workspace <span>/</span> <b id="crumb">Overview</b></div>
+        <div class="top-actions">
+          <span class="today" id="today"></span>
+          <div class="feature-wrap">
+            <button class="feature-button" id="featureButton" aria-expanded="false">Features <span>⌄</span></button>
+            <div class="feature-menu" id="featureMenu">
+              <div class="menu-heading">BUSINESS TOOLS</div>
+              <button data-page="customers">Manage customers</button>
+              <button data-page="sales">Track sales</button>
+              <button data-page="jama">Manage jama / udhar</button>
+              <button data-page="cash">Manage cash / bank</button>
+              <button data-page="networth">Check total net worth</button>
+              <button data-page="committee">Manage committee</button>
+              <button data-page="inventory">Track inventory</button>
+              <button data-page="reports">Profit vs expenses</button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <section class="content">
+        <div class="page-heading">
+          <div><p class="eyebrow">YOUR BUSINESS AT A GLANCE</p><h1 id="pageTitle">Good evening, Kushagra 👋</h1><p id="pageSubtitle">Here’s what’s happening with your business today.</p></div>
+          <button class="primary-button" id="quickAction">＋ <span>Quick action</span></button>
+        </div>
+        <div id="pageContent"></div>
+        <footer>Vasundhara <span>•</span> Simple business management dashboard</footer>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<!-- Supabase connection -->
+<script src="supabase.js"></script>
+<script src="app.js"></script>
+<script src="customers.js"></script>
+<script src="inventory.js"></script>
+<script src="jama.js"></script>
+<script src="cash.js"></script>
+<script src="sales.js"></script>
+<script src="committee.js"></script>
+<script src="networth.js"></script>
+<script src="reports.js"></script>
+</body>
+</html>
