@@ -4,32 +4,72 @@
 
 const CASH_STORAGE_KEY = "bizpilot_cash_bank_v1";
 const CASH_OPENING_KEY = "bizpilot_cash_opening_balances_v1";
+let cashTransactionsCache = [];
+
+let cashOpeningCache = {
+    cash: 0,
+    bank: 0
+};
 
 function loadCashTransactions() {
-    try {
-        return JSON.parse(localStorage.getItem(CASH_STORAGE_KEY)) || [];
-    } catch (error) {
-        return [];
-    }
+    return cashTransactionsCache;
 }
 
 function saveCashTransactions(records) {
-    localStorage.setItem(CASH_STORAGE_KEY, JSON.stringify(records));
+    cashTransactionsCache = records;
 }
 
 function loadCashOpeningBalances() {
-    try {
-        return JSON.parse(localStorage.getItem(CASH_OPENING_KEY)) || {
-            cash: 0,
-            bank: 0
-        };
-    } catch (error) {
-        return { cash: 0, bank: 0 };
-    }
+    return cashOpeningCache;
 }
 
 function saveCashOpeningBalances(balances) {
-    localStorage.setItem(CASH_OPENING_KEY, JSON.stringify(balances));
+    cashOpeningCache = balances;
+}
+
+async function loadCashDataFromSupabase() {
+    const { data: openingData, error: openingError } =
+        await VasundharaDB.select("cash_bank_opening_balances");
+
+    if (openingError) {
+        throw openingError;
+    }
+
+    const { data: transactionData, error: transactionError } =
+        await VasundharaDB.select("cash_bank_transactions");
+
+    if (transactionError) {
+        throw transactionError;
+    }
+
+    cashOpeningCache = {
+        cash: 0,
+        bank: 0
+    };
+
+    (openingData || []).forEach(record => {
+        if (record.account === "cash") {
+            cashOpeningCache.cash = Number(record.opening_balance) || 0;
+        }
+
+        if (record.account === "bank") {
+            cashOpeningCache.bank = Number(record.opening_balance) || 0;
+        }
+    });
+
+    cashTransactionsCache = (transactionData || []).map(record => ({
+        id: record.id,
+        date: record.date,
+        account: record.account,
+        direction: record.direction,
+        amount: Number(record.amount) || 0,
+        purpose: record.purpose,
+        customerMobile: record.customer_mobile || "",
+        customerName: record.customer_name || "",
+        details: record.details || "",
+        transferId: record.transfer_id || "",
+        createdAt: record.created_at
+    }));
 }
 
 function cashEscape(value) {
@@ -93,7 +133,7 @@ function getCashBalances() {
     return { cash, bank };
 }
 
-function saveCashOpeningForm() {
+async function saveCashOpeningForm() {
     const cash = Number(document.getElementById("cashOpeningCash").value);
     const bank = Number(document.getElementById("cashOpeningBank").value);
 
@@ -102,9 +142,23 @@ function saveCashOpeningForm() {
         return;
     }
 
-    saveCashOpeningBalances({ cash, bank });
-    renderCashPage();
-    alert("Opening balances saved successfully.");
+    try {
+        const { error } = await VasundharaDB.supabase
+            .from("cash_bank_opening_balances")
+            .upsert([
+                { account: "cash", opening_balance: cash },
+                { account: "bank", opening_balance: bank }
+            ], { onConflict: "account" });
+
+        if (error) throw error;
+
+        await render("cash");
+
+        alert("Opening balances saved successfully.");
+    } catch (error) {
+        console.error("Opening balance save error:", error);
+        alert("Unable to save opening balances. Please try again.");
+    }
 }
 
 function updateCashCustomerName() {
@@ -422,18 +476,21 @@ function exportCashCSV() {
     URL.revokeObjectURL(url);
 }
 
-function renderCashPage() {
+async function renderCashPage() {
+    try {
+        await loadCashDataFromSupabase();
+    } catch (error) {
+        console.error("Cash data loading error:", error);
+        alert("Unable to load Cash / Bank data. Please try again.");
+        return;
+    }
     const opening = loadCashOpeningBalances();
     const balances = getCashBalances();
     const records = loadCashTransactions();
 
-    const workspace = document.querySelector("main");
-if (!workspace) {
-    console.error("Main content container not found.");
-    return;
-}
+    
 
-    workspace.innerHTML = `
+    return `
         <div class="cash-page">
             <h2>Cash / UPI Management</h2>
             <p>Track money received, money spent, and transfers between Cash and Bank.</p>
@@ -603,6 +660,4 @@ if (!workspace) {
             </section>
         </div>
     `;
-
-    filterCashTransactions();
 }

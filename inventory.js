@@ -41,8 +41,19 @@ function formatInventoryWeight(weight) {
 }
 
 // Display the Inventory page
-function renderInventoryPage() {
-  const items = loadInventory();
+async function renderInventoryPage() {
+  const { data, error } = await VasundharaDB.select("inventory");
+
+  if (error) {
+    throw error;
+  }
+
+  const items = (data || []).map(item => ({
+    id: item.id,
+    name: item.name,
+    quantity: item.quantity,
+    weightGrams: item.weight_grams
+  }));
 
   const totalQuantity = items.reduce(
     (sum, item) => sum + Number(item.quantity || 0), 0
@@ -62,7 +73,7 @@ function renderInventoryPage() {
             <button
               type="button"
               class="muted-link"
-              data-inventory-edit="${escapeInventoryHTML(item.name)}"
+              data-inventory-edit="${escapeInventoryHTML(item.id)}"
             >
               Edit stock
             </button>
@@ -216,7 +227,8 @@ function renderInventoryPage() {
 
 
 // Add a new inventory item
-document.addEventListener("submit", function(event) {
+
+document.addEventListener("submit", async function(event) {
   if (event.target.id !== "inventoryForm") return;
 
   event.preventDefault();
@@ -242,28 +254,39 @@ document.addEventListener("submit", function(event) {
     return;
   }
 
-  const items = loadInventory();
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton.disabled = true;
+  submitButton.textContent = "Adding...";
 
-  const duplicate = items.some(
-    item => item.name.toLowerCase() === name.toLowerCase()
-  );
+  try {
+    const { data, error } = await VasundharaDB.insert("inventory", {
+      name: name,
+      quantity: quantity,
+      weight_grams: weight
+    });
 
-  if (duplicate) {
-    toast("This inventory item already exists.");
-    return;
+    if (error) {
+      if (error.code === "23505") {
+        toast("This inventory item already exists.");
+      } else {
+        console.error("Inventory insert error:", error);
+        toast("Unable to add inventory item.");
+      }
+      return;
+    }
+
+    toast("Inventory item added successfully.");
+    await render("inventory");
+
+  } catch (error) {
+    console.error("Inventory error:", error);
+    toast("Unable to add inventory item. Please try again.");
+  } finally {
+    submitButton.disabled = false;
+    submitButton.textContent = "+ Add item";
   }
-
-  items.push({
-    name: name,
-    quantity: quantity,
-    weightGrams: weight
-  });
-
-  saveInventory(items);
-
-  render("inventory");
-  toast("Inventory item added successfully.");
 });
+
 
 
 // Search inventory items
@@ -280,117 +303,147 @@ document.addEventListener("input", function(event) {
 
 
 // Edit the current total quantity and weight of an item
-document.addEventListener("click", function(event) {
+
+document.addEventListener("click", async function(event) {
   const editButton = event.target.closest("[data-inventory-edit]");
 
   if (editButton) {
-    const itemName = editButton.dataset.inventoryEdit;
-    const items = loadInventory();
+    const itemId = editButton.dataset.inventoryEdit;
 
-    const item = items.find(
-      entry => entry.name === itemName
-    );
+    try {
+      const { data: items, error: fetchError } =
+        await VasundharaDB.select("inventory");
 
-    if (!item) {
-      toast("Inventory item not found.");
-      return;
+      if (fetchError) throw fetchError;
+
+      const item = (items || []).find(
+        entry => entry.id === itemId
+      );
+
+      if (!item) {
+        toast("Inventory item not found.");
+        return;
+      }
+
+      const quantityText = prompt(
+        "Enter the updated total quantity for " + item.name,
+        String(item.quantity)
+      );
+
+      if (quantityText === null) return;
+
+      const weightText = prompt(
+        "Enter the updated total weight in grams for " + item.name,
+        String(item.weight_grams)
+      );
+
+      if (weightText === null) return;
+
+      const quantity = Number(quantityText);
+      const weight = Number(weightText);
+
+      if (
+        quantityText.trim() === "" ||
+        !Number.isInteger(quantity) ||
+        quantity < 0
+      ) {
+        toast("Enter a valid whole-number quantity.");
+        return;
+      }
+
+      if (
+        weightText.trim() === "" ||
+        !Number.isFinite(weight) ||
+        weight < 0
+      ) {
+        toast("Enter a valid weight.");
+        return;
+      }
+
+      if (
+        (quantity === 0 && weight !== 0) ||
+        (quantity > 0 && weight <= 0)
+      ) {
+        toast("Quantity and weight must both be zero or both be positive.");
+        return;
+      }
+
+      const decimalPart = weightText.split(".")[1];
+
+      if (decimalPart && decimalPart.length > 3) {
+        toast("Weight can have a maximum of 3 decimal places.");
+        return;
+      }
+
+      const { error: updateError } = await VasundharaDB.update(
+        "inventory",
+        {
+          quantity: quantity,
+          weight_grams: weight,
+          updated_at: new Date().toISOString()
+        },
+        {
+          id: itemId
+        }
+      );
+
+      if (updateError) throw updateError;
+
+      toast("Inventory stock updated successfully.");
+      await render("inventory");
+
+    } catch (error) {
+      console.error("Inventory update error:", error);
+      toast("Unable to update inventory stock.");
     }
 
-    const quantityText = prompt(
-      "Enter the updated total quantity for " + item.name,
-      String(item.quantity)
-    );
-
-    if (quantityText === null) return;
-
-    const weightText = prompt(
-      "Enter the updated total weight in grams for " + item.name,
-      String(item.weightGrams)
-    );
-
-    if (weightText === null) return;
-
-    const quantity = Number(quantityText);
-    const weight = Number(weightText);
-
-    if (
-      quantityText.trim() === "" ||
-      !Number.isInteger(quantity) ||
-      quantity < 0
-    ) {
-      toast("Enter a valid whole-number quantity.");
-      return;
-    }
-
-    if (
-      weightText.trim() === "" ||
-      !Number.isFinite(weight) ||
-      weight < 0
-    ) {
-      toast("Enter a valid weight.");
-      return;
-    }
-
-    if (
-      (quantity === 0 && weight !== 0) ||
-      (quantity > 0 && weight <= 0)
-    ) {
-      toast("Quantity and weight must both be zero or both be positive.");
-      return;
-    }
-
-    const decimalPart = weightText.split(".")[1];
-
-    if (decimalPart && decimalPart.length > 3) {
-      toast("Weight can have a maximum of 3 decimal places.");
-      return;
-    }
-
-    item.quantity = quantity;
-    item.weightGrams = weight;
-
-    saveInventory(items);
-
-    render("inventory");
-    toast("Inventory stock updated successfully.");
     return;
   }
 
-  // Export inventory to CSV
+  // Export inventory to CSV using Supabase data.
   if (event.target.id === "inventoryExport") {
-    const items = loadInventory();
+    try {
+      const { data: items, error } =
+        await VasundharaDB.select("inventory");
 
-    const headers = [
-      "Item name",
-      "Available quantity",
-      "Total weight (grams)"
-    ];
+      if (error) throw error;
 
-    const rows = items.map(item => [
-      item.name,
-      item.quantity,
-      item.weightGrams
-    ]);
+      const headers = [
+        "Item name",
+        "Available quantity",
+        "Total weight (grams)"
+      ];
 
-    const csv = [headers, ...rows]
-      .map(row => row.map(value =>
-        `"${String(value).replace(/"/g, '""')}"`
-      ).join(","))
-      .join("\n");
+      const rows = (items || []).map(item => [
+        item.name,
+        item.quantity,
+        item.weight_grams
+      ]);
 
-    const blob = new Blob([csv], {
-      type: "text/csv;charset=utf-8;"
-    });
+      const csv = [headers, ...rows]
+        .map(row => row.map(value =>
+          `"${String(value ?? "").replace(/"/g, '""')}"`
+        ).join(","))
+        .join("\n");
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+      const blob = new Blob([csv], {
+        type: "text/csv;charset=utf-8;"
+      });
 
-    link.href = url;
-    link.download = "inventory.csv";
-    link.click();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
 
-    URL.revokeObjectURL(url);
+      link.href = url;
+      link.download = "inventory.csv";
+      link.click();
 
-    toast("Inventory CSV exported.");
+      URL.revokeObjectURL(url);
+
+      toast("Inventory CSV exported.");
+
+    } catch (error) {
+      console.error("Inventory export error:", error);
+      toast("Unable to export inventory.");
+    }
   }
 });

@@ -299,9 +299,43 @@ function getJamaUdharTotals() {
 }
 
 // Display the Jama/Udhar page
-function renderJamaPage() {
-  const records = loadJamaUdharRecords();
-  const totals = getJamaUdharTotals();
+async function renderJamaPage() {
+  const { data, error } = await VasundharaDB.select("jama_udhar");
+
+  if (error) throw error;
+
+  const records = (data || []).map(record => ({
+    transactionId: record.transaction_id,
+    date: record.date,
+    customerMobile: record.customer_mobile,
+    customerName: record.customer_name,
+    type: record.type,
+    remainingAmount: Number(record.remaining_amount || 0),
+    notes: record.notes
+  }));
+
+  const totals = records.reduce((result, record) => {
+    const remaining = Number(record.remainingAmount || 0);
+
+    if (record.type === "udhar") {
+      result.udhar += remaining;
+    }
+
+    if (record.type === "jama") {
+      result.jama += remaining;
+    }
+
+    return result;
+  }, {
+    jama: 0,
+    udhar: 0
+  });
+
+  totals.jama = Number(totals.jama.toFixed(2));
+  totals.udhar = Number(totals.udhar.toFixed(2));
+
+  // Keep the rest of your existing renderJamaPage() code here,
+  // starting immediately after the old totals declaration.
 
   const rows = records.length
     ? records.slice().reverse().map(record => {
@@ -526,8 +560,8 @@ function renderJamaPage() {
 }
 
 
-// Look up customer name when mobile number is entered
-document.addEventListener("input", function(event) {
+// Look up customer name from Supabase when mobile number is entered
+document.addEventListener("input", async function(event) {
   if (event.target.id !== "jamaCustomerMobile") return;
 
   const mobile = event.target.value.trim();
@@ -544,45 +578,119 @@ document.addEventListener("input", function(event) {
     return;
   }
 
-  const customer = findJamaCustomer(mobile);
+  status.textContent = "Checking customer...";
+  status.className = "jama-help";
 
-  if (!customer) {
-    status.textContent = "Customer not found. Add the customer first.";
+  try {
+    const { data, error } = await VasundharaDB.select(
+      "customers",
+      "mobile,name"
+    );
+
+    if (error) throw error;
+
+    const customer = (data || []).find(
+      item => item.mobile === mobile
+    );
+
+    // Ignore the result if the mobile input changed while loading.
+    if (document.getElementById("jamaCustomerMobile")?.value.trim() !== mobile) {
+      return;
+    }
+
+    if (!customer) {
+      status.textContent = "Customer not found. Add the customer first.";
+      status.className = "jama-help jama-error";
+      return;
+    }
+
+    nameInput.value = customer.name;
+    status.textContent = "Customer found.";
+    status.className = "jama-help jama-success";
+
+  } catch (error) {
+    console.error("Customer lookup error:", error);
+    status.textContent = "Could not check customer. Please try again.";
     status.className = "jama-help jama-error";
-    return;
   }
-
-  nameInput.value = customer.name;
-  status.textContent = "Customer found.";
-  status.className = "jama-help jama-success";
 });
 
-
-// Save a new Jama or Udhar entry
-document.addEventListener("submit", function(event) {
+// Save a new Jama or Udhar entry to Supabase
+document.addEventListener("submit", async function(event) {
   if (event.target.id !== "jamaForm") return;
 
   event.preventDefault();
 
   const form = event.target;
 
-  try {
-    const record = addJamaUdharEntry({
-      customerMobile: form.elements.customerMobile.value,
-      type: form.elements.type.value,
-      amount: form.elements.amount.value,
-      date: form.elements.date.value,
-      notes: form.elements.notes.value,
-      source: "manual"
-    });
+  const mobile = form.elements.customerMobile.value.trim();
+  const type = form.elements.type.value;
+  const amount = Number(form.elements.amount.value);
+  const date = form.elements.date.value;
+  const notes = form.elements.notes.value.trim();
 
-    render("jama");
+  try {
+    // Validate customer mobile number.
+    if (!/^[0-9]{10}$/.test(mobile)) {
+      throw new Error("Enter a valid 10-digit customer mobile number.");
+    }
+
+    // Validate transaction type.
+    if (type !== "jama" && type !== "udhar") {
+      throw new Error("Select Jama or Udhar.");
+    }
+
+    // Validate amount.
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error("Amount must be greater than zero.");
+    }
+
+    // Validate date.
+    if (!date || Number.isNaN(new Date(date + "T00:00:00").getTime())) {
+      throw new Error("Enter a valid transaction date.");
+    }
+
+    // Find customer in Supabase.
+    const { data: customers, error: customerError } =
+      await VasundharaDB.select("customers", "mobile,name");
+
+    if (customerError) throw customerError;
+
+    const customer = (customers || []).find(
+      item => item.mobile === mobile
+    );
+
+    if (!customer) {
+      throw new Error("Customer not found. Register the customer first.");
+    }
+
+    // Save transaction in Supabase.
+    const { error } = await VasundharaDB.supabase
+      .from("jama_udhar")
+      .insert({
+        customer_mobile: customer.mobile,
+        customer_name: customer.name,
+        type: type,
+        original_amount: amount,
+        remaining_amount: amount,
+        date: date,
+        notes: notes,
+        source: "manual",
+        reference: ""
+      });
+
+    if (error) throw error;
+
     toast(
-      record.type === "jama"
+      type === "jama"
         ? "Jama entry saved successfully."
         : "Udhar entry saved successfully."
     );
+
+    await render("jama");
+
   } catch (error) {
+    console.error("Jama/Udhar save error:", error);
     toast(error.message || "Could not save the transaction.");
   }
 });
@@ -601,60 +709,79 @@ document.addEventListener("input", function(event) {
 });
 
 
-// Export Jama/Udhar records
-document.addEventListener("click", function(event) {
+// Export Jama/Udhar records from Supabase
+document.addEventListener("click", async function(event) {
   if (event.target.id !== "jamaExport") return;
 
-  const records = loadJamaUdharRecords();
+  try {
+    const { data, error } = await VasundharaDB.select("jama_udhar");
 
-  const headers = [
-    "Transaction ID",
-    "Date",
-    "Customer mobile",
-    "Customer name",
-    "Type",
-    "Original amount",
-    "Remaining amount",
-    "Signed remaining amount",
-    "Status",
-    "Details"
-  ];
+    if (error) throw error;
 
-  const rows = records.map(record => {
-    const remaining = Number(record.remainingAmount || 0);
+    const records = (data || []).map(record => ({
+      transactionId: record.transaction_id,
+      date: record.date,
+      customerMobile: record.customer_mobile,
+      customerName: record.customer_name,
+      type: record.type,
+      originalAmount: Number(record.original_amount || 0),
+      remainingAmount: Number(record.remaining_amount || 0),
+      notes: record.notes
+    }));
 
-    return [
-      record.transactionId,
-      record.date,
-      record.customerMobile,
-      record.customerName,
-      record.type,
-      record.originalAmount,
-      remaining,
-      record.type === "jama" ? -remaining : remaining,
-      remaining <= 0 ? "Cleared" : "Uncleared",
-      record.notes || ""
+    const headers = [
+      "Transaction ID",
+      "Date",
+      "Customer mobile",
+      "Customer name",
+      "Type",
+      "Original amount",
+      "Remaining amount",
+      "Signed remaining amount",
+      "Status",
+      "Details"
     ];
-  });
 
-  const csv = [headers, ...rows]
-    .map(row => row.map(value =>
-      `"${String(value ?? "").replace(/"/g, '""')}"`
-    ).join(","))
-    .join("\n");
+    const rows = records.map(record => {
+      const remaining = record.remainingAmount;
 
-  const blob = new Blob([csv], {
-    type: "text/csv;charset=utf-8;"
-  });
+      return [
+        record.transactionId,
+        record.date,
+        record.customerMobile,
+        record.customerName,
+        record.type,
+        record.originalAmount,
+        remaining,
+        record.type === "jama" ? -remaining : remaining,
+        remaining <= 0 ? "Cleared" : "Uncleared",
+        record.notes || ""
+      ];
+    });
 
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
+    const csv = [headers, ...rows]
+      .map(row => row.map(value =>
+        `"${String(value ?? "").replace(/"/g, '""')}"`
+      ).join(","))
+      .join("\n");
 
-  link.href = url;
-  link.download = "jama-udhar.csv";
-  link.click();
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;"
+    }); 
 
-  URL.revokeObjectURL(url);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
 
-  toast("Jama/Udhar CSV exported.");
+    link.href = url;
+    link.download = "jama-udhar.csv";
+    link.click();
+
+    URL.revokeObjectURL(url);
+
+    toast("Jama/Udhar CSV exported.");
+
+  } catch (error) {
+    console.error("Jama/Udhar CSV export error:", error);
+    toast("Could not export Jama/Udhar records.");
+  }
 });

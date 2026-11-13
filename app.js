@@ -158,6 +158,9 @@ async function render(key) {
         if (requestId !== renderRequestId) return;
 
         pageContent.innerHTML = content ?? "";
+        if (key === "cash") {
+    filterCashTransactions();
+}
     } catch (error) {
         if (requestId !== renderRequestId) return;
 
