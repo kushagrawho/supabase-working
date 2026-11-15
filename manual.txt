@@ -103,13 +103,65 @@ d) total profit of all the invoices of previous month , suppose its november 26 
 
 
  Phase	Work
-1. Authentication	Connect Supabase, create login screen, restore sessions and implement logout
-2. Shared database connection	Set up a reusable Supabase client and common database functions
-3. Basic modules	Connect Customers and Inventory
-4. Financial modules	Connect Jama/Udhar and Cash/Bank
-5. Sales	Implement safe, atomic invoice creation and related transactions
-6. Committees	Connect members, payments, draws and payout usage
-7. Dashboards	Connect Overview, Net Worth and Reports
-8. Testing	Test all operations, security and page navigation
-9. Deployment	Configure and deploy the connected application through Vercel
+Phase 1 — Finish Cash / Bank
+Small task remaining
 
+- [ ] Cash-to-Bank and Bank-to-Cash transfers must save to Supabase.
+- [ ] Test both transfer directions and verify balances and history.
+
+Phase 2 — Sales Management
+Major module
+
+- [ ] Load customers and inventory from Supabase.
+- [ ] Save invoices and invoice items.
+- [ ] Update inventory quantities and weights after sales.
+- [ ] Handle Cash, UPI, Committee, Advance Jama and Udhar payments.
+- [ ] Connect Advance Jama settlements to the database.
+- [ ] Ensure invoice creation and all related changes happen atomically.
+- [ ] Test complete invoice scenarios, including failures and partial payments.
+
+Phase 3 — Committee Management
+Major module
+
+- [ ] Create and display committees.
+- [ ] Add and manage committee members.
+- [ ] Record monthly payments.
+- [ ] Select and record draw winners.
+- [ ] Track payouts and remaining payout amounts.
+- [ ] Record payout usage.
+- [ ] Close committees.
+- [ ] Connect all operations to Supabase and test them.
+
+Phase 4 — Net Worth
+Database integration
+
+- [ ] Calculate Cash and Bank balances.
+- [ ] Include outstanding Jama and Udhar.
+- [ ] Include inventory and committee-related balances according to the existing calculation.
+- [ ] Verify calculations against actual database records.
+
+Phase 5 — Reports
+Database integration
+
+- [ ] Connect sales reports to Supabase.
+- [ ] Connect expense and cash transaction reports.
+- [ ] Verify date filters and financial calculations.
+- [ ] Test CSV exports.
+
+Phase 6 — Overview Dashboard
+Final integration
+
+- [ ] Replace local/demo figures with live database figures.
+- [ ] Display accurate sales, profit, inventory, Jama, Udhar and Cash/Bank summaries.
+- [ ] Verify that dashboard figures match the individual modules.
+
+Phase 7 — Login and Final Testing
+Final release
+
+- [ ] Complete shared-user login and logout.
+- [ ] Prevent access to the main app before authentication.
+- [ ] Verify session persistence and expired-session behavior.
+- [ ] Remove remaining localStorage-based business data dependencies.
+- [ ] Test all modules together.
+- [ ] Test refresh, browser restart, invalid inputs and database errors.
+- [ ] Check the Vercel deployment and production configuration.

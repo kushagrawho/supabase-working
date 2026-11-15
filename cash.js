@@ -97,22 +97,21 @@ function cashToday() {
     return `${year}-${month}-${day}`;
 }
 
-function getCashCustomerName(mobile) {
+async function getCashCustomerName(mobile) {
     if (!mobile) return "";
 
-    try {
-        const customers = JSON.parse(
-            localStorage.getItem("bizpilot_customers_v1")
-        ) || [];
+    const { data, error } = await VasundharaDB.select(
+        "customers",
+        "mobile,name"
+    );
 
-        const customer = customers.find(
-            item => String(item.mobile) === String(mobile)
-        );
+    if (error) throw error;
 
-        return customer ? customer.name : "";
-    } catch (error) {
-        return "";
-    }
+    const customer = (data || []).find(
+        item => String(item.mobile) === String(mobile)
+    );
+
+    return customer ? customer.name : "";
 }
 
 function getCashBalances() {
@@ -161,13 +160,27 @@ async function saveCashOpeningForm() {
     }
 }
 
-function updateCashCustomerName() {
+async function updateCashCustomerName() {
     const mobile = document.getElementById("cashCustomerMobile").value.trim();
-    const name = getCashCustomerName(mobile);
     const nameField = document.getElementById("cashCustomerName");
 
-    if (nameField) {
-        nameField.value = name || "";
+    if (!nameField) return;
+
+    nameField.value = "";
+
+    if (!mobile) return;
+
+    try {
+        const name = await getCashCustomerName(mobile);
+
+        // Avoid displaying an old result if the user has typed another number.
+        if (
+            document.getElementById("cashCustomerMobile")?.value.trim() === mobile
+        ) {
+            nameField.value = name || "";
+        }
+    } catch (error) {
+        console.error("Customer lookup error:", error);
     }
 }
 
@@ -191,7 +204,7 @@ function updateCashPurposeFields() {
     }
 }
 
-function addCashTransaction() {
+async function addCashTransaction() {
     const account = document.getElementById("cashAccount").value;
     const direction = document.getElementById("cashDirection").value;
     const amount = Number(document.getElementById("cashAmount").value);
@@ -210,169 +223,82 @@ function addCashTransaction() {
         return;
     }
 
-    let customerName = "";
-
-    if (purpose === "advance_jama" || purpose === "udhar_clearance") {
-        customerName = getCashCustomerName(mobile);
-
-        if (!mobile || !customerName) {
-            alert("Please enter the mobile number of a registered customer.");
-            return;
-        }
-    }
-
     if (purpose === "other" && !details) {
         alert("Please enter details for the Other transaction.");
         return;
     }
 
-    const records = loadCashTransactions();
-
-    // Advance received from a customer: create a Jama entry.
-    if (purpose === "advance_jama") {
-        if (typeof addJamaUdharEntry !== "function") {
-            alert("Jama/Udhar module is not available. Please check the script loading order.");
+    if (purpose === "advance_jama" || purpose === "udhar_clearance") {
+        if (!/^[0-9]{10}$/.test(mobile)) {
+            alert("Please enter a valid 10-digit customer mobile number.");
             return;
-        }
-
-        addJamaUdharEntry({
-            customerMobile: mobile,
-            type: "jama",
-            amount,
-            date,
-            notes: details || "Advance received through Cash/UPI",
-            source: "cash_bank",
-            reference: ""
-        });
-    }
-
-    // Customer pays an existing Udhar. Any extra amount becomes Jama.
-    if (purpose === "udhar_clearance") {
-        if (typeof applyJamaUdharSettlement !== "function" ||
-            typeof addJamaUdharEntry !== "function") {
-            alert("Jama/Udhar module is not available. Please check the script loading order.");
-            return;
-        }
-
-        const result = applyJamaUdharSettlement({
-            customerMobile: mobile,
-            balanceType: "udhar",
-            amount,
-            date,
-            source: "cash_bank",
-            reference: ""
-        });
-
-        if (!result || typeof result.appliedAmount !== "number") {
-            alert("The Udhar settlement could not be completed. No Cash/UPI transaction was added.");
-            return;
-        }
-
-        if (result.unappliedAmount > 0) {
-            addJamaUdharEntry({
-                customerMobile: mobile,
-                type: "jama",
-                amount: result.unappliedAmount,
-                date,
-                notes: "Extra amount received after Udhar clearance",
-                source: "cash_bank",
-                reference: ""
-            });
         }
     }
 
-    records.push({
-        id: Date.now().toString(),
-        date,
-        account,
-        direction,
-        amount,
-        purpose,
-        customerMobile: mobile,
-        customerName,
-        details,
-        createdAt: new Date().toISOString()
-    });
+    try {
+        const { data, error } = await VasundharaDB.supabase.rpc(
+            "create_cash_transaction",
+            {
+                p_account: account,
+                p_direction: direction,
+                p_amount: amount,
+                p_date: date,
+                p_purpose: purpose,
+                p_customer_mobile: mobile,
+                p_details: details
+            }
+        );
 
-    saveCashTransactions(records);
-    renderCashPage();
-    alert("Cash/UPI transaction added successfully.");
+        if (error) throw error;
+
+        await render("cash");
+
+        alert("Cash/UPI transaction added successfully.");
+    } catch (error) {
+        console.error("Cash transaction error:", error);
+        alert(error.message || "Unable to save the Cash/UPI transaction.");
+    }
 }
 
-function addCashTransfer() {
+
+async function addCashTransfer() {
     const transferType = document.getElementById("cashTransferType").value;
     const amount = Number(document.getElementById("cashTransferAmount").value);
     const date = document.getElementById("cashTransferDate").value;
     const details = document.getElementById("cashTransferDetails").value.trim();
 
     if (!date || !Number.isFinite(amount) || amount <= 0) {
-        alert("Please enter a valid transfer date and amount greater than zero.");
+        alert("Please enter a valid date and amount greater than zero.");
         return;
     }
 
-    const records = loadCashTransactions();
-    const transferId = "TR-" + Date.now();
-
-    // Cash to Bank: Cash goes out and Bank receives the amount.
-    if (transferType === "cash_to_bank") {
-        records.push({
-            id: transferId + "-C",
-            transferId,
-            date,
-            account: "cash",
-            direction: "out",
-            amount,
-            purpose: "transfer",
-            details: details || "Cash deposited into bank",
-            customerMobile: "",
-            customerName: ""
-        });
-
-        records.push({
-            id: transferId + "-B",
-            transferId,
-            date,
-            account: "bank",
-            direction: "in",
-            amount,
-            purpose: "transfer",
-            details: details || "Cash received in bank",
-            customerMobile: "",
-            customerName: ""
-        });
-    } else {
-        // Bank to Cash: Bank goes out and Cash receives the amount.
-        records.push({
-            id: transferId + "-B",
-            transferId,
-            date,
-            account: "bank",
-            direction: "out",
-            amount,
-            purpose: "transfer",
-            details: details || "Amount withdrawn from bank",
-            customerMobile: "",
-            customerName: ""
-        });
-
-        records.push({
-            id: transferId + "-C",
-            transferId,
-            date,
-            account: "cash",
-            direction: "in",
-            amount,
-            purpose: "transfer",
-            details: details || "Cash received from bank withdrawal",
-            customerMobile: "",
-            customerName: ""
-        });
+    if (!["cash_to_bank", "bank_to_cash"].includes(transferType)) {
+        alert("Please select a valid transfer type.");
+        return;
     }
 
-    saveCashTransactions(records);
-    renderCashPage();
-    alert("Cash/Bank transfer recorded successfully.");
+    try {
+        const { data, error } = await VasundharaDB.supabase.rpc(
+            "create_cash_transfer",
+            {
+                p_transfer_type: transferType,
+                p_amount: amount,
+                p_date: date,
+                p_details: details
+            }
+        );
+
+        if (error) throw error;
+
+        await render("cash");
+
+        alert("Cash/Bank transfer completed successfully.");
+    } catch (error) {
+        console.error("Cash/Bank transfer error:", error);
+        alert(error.message || "Unable to complete the transfer.");
+    }
 }
+
 
 function getCashPurposeLabel(purpose) {
     const labels = {

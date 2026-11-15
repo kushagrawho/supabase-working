@@ -1,64 +1,9 @@
-// ==========================================
 // SALES MANAGEMENT
-// Multi-item invoices + payment integration
-// ==========================================
-
-const SALES_STORAGE_KEY = "bizpilot_sales_v1";
-const SALES_INVENTORY_STORAGE_KEY = "bizpilot_inventory_v1";
-const SALES_CUSTOMER_STORAGE_KEY = "bizpilot_customers_v1";
-
-const SALES_CASH_STORAGE_KEY = "bizpilot_cash_bank_v1";
-const SALES_JAMA_STORAGE_KEY = "bizpilot_jama_udhar_v1";
-const SALES_JAMA_SETTLEMENTS_KEY = "bizpilot_jama_udhar_settlements_v1";
-const SALES_JAMA_NEXT_ID_KEY = "bizpilot_jama_next_id";
 
 
-// ==========================================
-// 1. STORAGE FUNCTIONS
-// ==========================================
+let salesInventoryCache = [];
+let salesCustomerCache = [];
 
-function loadSales() {
-  try {
-    const records = JSON.parse(localStorage.getItem(SALES_STORAGE_KEY));
-    return Array.isArray(records) ? records : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function saveSales(records) {
-  localStorage.setItem(SALES_STORAGE_KEY, JSON.stringify(records));
-}
-
-function loadSalesCustomers() {
-  try {
-    const records = JSON.parse(localStorage.getItem(SALES_CUSTOMER_STORAGE_KEY));
-    return Array.isArray(records) ? records : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function loadSalesInventoryRecords() {
-  try {
-    const records = JSON.parse(localStorage.getItem(SALES_INVENTORY_STORAGE_KEY));
-    return Array.isArray(records) ? records : [];
-  } catch (error) {
-    return [];
-  }
-}
-
-function saveSalesInventoryRecords(records) {
-  localStorage.setItem(
-    SALES_INVENTORY_STORAGE_KEY,
-    JSON.stringify(records)
-  );
-}
-
-
-// ==========================================
-// 2. COMMON HELPER FUNCTIONS
-// ==========================================
 
 function escapeSalesHTML(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
@@ -74,7 +19,7 @@ function getSalesLocalDate() {
   const now = new Date();
 
   const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const month = String(now.getMonth() + 1).padStart(2, " 0");
   const day = String(now.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
@@ -109,72 +54,6 @@ function salesFromPaise(value) {
   return Number((value / 100).toFixed(2));
 }
 
-
-// ==========================================
-// 3. FINANCIAL YEAR INVOICE NUMBER
-// ==========================================
-
-function generateSalesInvoiceNumber(dateValue, existingSales) {
-  const saleDate = new Date(dateValue + "T00:00:00");
-
-  if (Number.isNaN(saleDate.getTime())) {
-    throw new Error("Invalid sale date.");
-  }
-
-  const calendarYear = saleDate.getFullYear();
-  const month = saleDate.getMonth();
-
-  const financialYearStart = month >= 3
-    ? calendarYear
-    : calendarYear - 1;
-
-  const financialYearEnd = financialYearStart + 1;
-
-  const prefix =
-    "vs" +
-    String(financialYearStart).slice(-2) +
-    String(financialYearEnd).slice(-2);
-
-  let highestUsedNumber = 0;
-
-  existingSales.forEach(sale => {
-    const invoice = String(sale.invoiceNumber || "");
-
-    const match = invoice.match(
-      new RegExp("^" + prefix + "(\\d+)$", "i")
-    );
-
-    if (match) {
-      highestUsedNumber = Math.max(
-        highestUsedNumber,
-        Number(match[1])
-      );
-    }
-  });
-
-  const sequenceKey = "bizpilot_invoice_next_" + prefix;
-
-  const storedNext = Number(localStorage.getItem(sequenceKey));
-
-  const validStoredNext =
-    Number.isInteger(storedNext) && storedNext > 0
-      ? storedNext
-      : 1;
-
-  const nextNumber = Math.max(
-    validStoredNext,
-    highestUsedNumber + 1
-  );
-
-  localStorage.setItem(sequenceKey, String(nextNumber + 1));
-
-  return prefix + String(nextNumber).padStart(4, "0");
-}
-
-
-// ==========================================
-// 4. MULTI-ITEM INVOICE HELPERS
-// ==========================================
 
 // Get items from both new and old sale records.
 // Old invoices contained only one item.
@@ -217,10 +96,6 @@ function salesGetTotalWeight(sale) {
   );
 }
 
-
-// ==========================================
-// 5. ITEM ROW GENERATION
-// ==========================================
 
 function salesBuildItemRow(inventory, index) {
   const options = inventory.map(item => `
@@ -300,63 +175,6 @@ function salesBuildItemRow(inventory, index) {
 }
 
 
-// ==========================================
-// 6. STORAGE SNAPSHOT AND ROLLBACK
-// ==========================================
-
-function salesTakeStorageSnapshot(keys) {
-  const snapshot = {};
-
-  keys.forEach(key => {
-    snapshot[key] = localStorage.getItem(key);
-  });
-
-  return snapshot;
-}
-
-function salesRestoreStorageSnapshot(snapshot) {
-  Object.keys(snapshot).forEach(key => {
-    if (snapshot[key] === null) {
-      localStorage.removeItem(key);
-    } else {
-      localStorage.setItem(key, snapshot[key]);
-    }
-  });
-}
-
-
-// ==========================================
-// 7. AVAILABLE ADVANCE JAMA
-// ==========================================
-
-function salesGetAvailableJama(mobile) {
-  try {
-    const records = JSON.parse(
-      localStorage.getItem(SALES_JAMA_STORAGE_KEY)
-    ) || [];
-
-    return records
-      .filter(record =>
-        String(record.customerMobile) === String(mobile) &&
-        record.type === "jama"
-      )
-      .reduce((sum, record) => {
-        return sum + Math.max(
-          0,
-          Number(record.remainingAmount) || 0
-        );
-      }, 0);
-
-  } catch (error) {
-    return 0;
-  }
-}
-
-
-// ==========================================
-// 8. SALES PAYMENT ALLOCATION HELPERS
-// ==========================================
-
 function salesGetPaymentAllocations(form) {
   return {
     cash: Number(form.elements.payCash.value || 0),
@@ -429,9 +247,71 @@ function updateSalesPaymentTotal() {
 // 9. RENDER SALES PAGE
 // ==========================================
 
-function renderSalesPage() {
-  const sales = loadSales();
-  const inventory = loadSalesInventoryRecords();
+async function renderSalesPage() {
+  const [
+  { data: salesData, error: salesError },
+  { data: itemData, error: itemError },
+  { data: inventoryData, error: inventoryError },
+  { data: customersData, error: customersError }
+] = await Promise.all([
+  VasundharaDB.select("sales"),
+  VasundharaDB.select("sale_items"),
+  VasundharaDB.select("inventory"),
+  VasundharaDB.select("customers")
+]);
+
+  if (salesError) throw salesError;
+  if (itemError) throw itemError;
+  if (inventoryError) throw inventoryError;
+  if (customersError) throw customersError;
+
+  const itemsBySale = {};
+
+  (itemData || []).forEach(item => {
+    if (!itemsBySale[item.sale_id]) {
+      itemsBySale[item.sale_id] = [];
+    }
+
+    itemsBySale[item.sale_id].push({
+      itemName: item.item_name,
+      quantity: Number(item.quantity),
+      weightGrams: Number(item.weight_grams)
+    });
+  });
+
+  const sales = (salesData || []).map(sale => ({
+    id: sale.id,
+    invoiceNumber: sale.invoice_number,
+    customerMobile: sale.customer_mobile,
+    customerName: sale.customer_name,
+    date: sale.date,
+    finalAmount: Number(sale.final_amount),
+    profit: Number(sale.profit),
+    items: itemsBySale[sale.id] || [],
+    paymentAllocations: {
+      cash: Number(sale.cash),
+      upi: Number(sale.upi),
+      committee: Number(sale.committee),
+      advanceJama: Number(sale.advance_jama),
+      udhar: Number(sale.udhar)
+    },
+    paymentStatus: sale.payment_status
+  }));
+
+  const inventory = (inventoryData || []).map(item => ({
+    id: item.id,
+    name: item.name,
+    quantity: Number(item.quantity),
+    weightGrams: Number(item.weight_grams)
+  }));
+
+  salesInventoryCache = inventory;
+
+salesCustomerCache = (customersData || []).map(customer => ({
+  id: customer.id,
+  mobile: customer.mobile,
+  name: customer.name
+}));
 
   const totalSales = sales.reduce(
     (sum, sale) => sum + Number(sale.finalAmount || 0),
@@ -994,9 +874,9 @@ document.addEventListener("input", function(event) {
     return;
   }
 
-  const customer = loadSalesCustomers().find(
-    entry => String(entry.mobile) === mobile
-  );
+const customer = salesCustomerCache.find(
+  entry => String(entry.mobile) === mobile
+);
 
   if (!customer) {
 
@@ -1033,7 +913,7 @@ document.addEventListener("click", function(event) {
 
     if (!container) return;
 
-    const inventory = loadSalesInventoryRecords();
+    const inventory = salesInventoryCache;
 
     const index = container.querySelectorAll(
       "[data-sale-item-row]"
@@ -1136,7 +1016,7 @@ document.addEventListener("change", function(event) {
 
   const selectedName = event.target.value;
 
-  const inventory = loadSalesInventoryRecords();
+  const inventory = salesInventoryCache;
 
   const item = inventory.find(
     entry => entry.name === selectedName
@@ -1192,7 +1072,7 @@ document.addEventListener("input", function(event) {
     (
       event.target.id === "saleFinalAmount" ||
       [
-        "payCash",
+        "payCash",  
         "payUPI",
         "payCommittee",
         "payJama",
@@ -1208,11 +1088,8 @@ document.addEventListener("input", function(event) {
 });
 
 
-// ==========================================
-// 14. SAVE SALE
-// ==========================================
 
-document.addEventListener("submit", function(event) {
+document.addEventListener("submit", async function(event) {
 
   if (event.target.id !== "salesForm") return;
 
@@ -1244,9 +1121,9 @@ document.addEventListener("submit", function(event) {
     return;
   }
 
-  const customer = loadSalesCustomers().find(
-    entry => String(entry.mobile) === mobile
-  );
+ const customer = salesCustomerCache.find(
+  entry => String(entry.mobile) === mobile
+);
 
   if (!customer) {
 
@@ -1442,61 +1319,6 @@ document.addEventListener("submit", function(event) {
   }
 
 
-  // ----------------------------------------
-  // ADVANCE JAMA VALIDATION
-  // ----------------------------------------
-
-  if (paymentAllocations.advanceJama > 0) {
-
-    const availableJama = salesGetAvailableJama(mobile);
-
-    if (
-      salesToPaise(availableJama) <
-      salesToPaise(paymentAllocations.advanceJama)
-    ) {
-
-      toast(
-        "Insufficient Advance Jama. Available balance: " +
-        formatSalesMoney(availableJama) + "."
-      );
-
-      return;
-    }
-
-    if (typeof applyJamaUdharSettlement !== "function") {
-
-      toast(
-        "Jama/Udhar module is not loaded. Refresh the page and try again."
-      );
-
-      return;
-    }
-
-  }
-
-
-  // ----------------------------------------
-  // UDHAR FUNCTION VALIDATION
-  // ----------------------------------------
-
-  if (
-    paymentAllocations.udhar > 0 &&
-    typeof addJamaUdharEntry !== "function"
-  ) {
-
-    toast(
-      "Jama/Udhar module is not loaded. Refresh the page and try again."
-    );
-
-    return;
-  }
-
-
-  // ----------------------------------------
-  // GROUP REPEATED ITEMS
-  // ----------------------------------------
-  // If the same item appears in two rows, combine
-  // it for stock checking and deduction.
 
   const requestedByItem = new Map();
 
@@ -1523,7 +1345,7 @@ document.addEventListener("submit", function(event) {
   // INVENTORY VALIDATION
   // ----------------------------------------
 
-  const inventory = loadSalesInventoryRecords();
+  const inventory = salesInventoryCache;
 
   for (const requested of requestedByItem.values()) {
 
@@ -1596,339 +1418,36 @@ document.addEventListener("submit", function(event) {
   }
 
 
-  // ========================================
-  // 15. PREPARE INVOICE AND STORAGE BACKUP
-  // ========================================
-
-  const sales = loadSales();
-
-  const saleDate = new Date(date + "T00:00:00");
-
-  const financialYearStart =
-    saleDate.getMonth() >= 3
-      ? saleDate.getFullYear()
-      : saleDate.getFullYear() - 1;
-
-  const financialYearPrefix =
-    "vs" +
-    String(financialYearStart).slice(-2) +
-    String(financialYearStart + 1).slice(-2);
-
-  const sequenceKey =
-    "bizpilot_invoice_next_" + financialYearPrefix;
-
-
-  const storageKeys = [
-    SALES_STORAGE_KEY,
-    SALES_INVENTORY_STORAGE_KEY,
-    SALES_CASH_STORAGE_KEY,
-    SALES_JAMA_STORAGE_KEY,
-    SALES_JAMA_SETTLEMENTS_KEY,
-    SALES_JAMA_NEXT_ID_KEY,
-    sequenceKey
-  ];
-
-  const snapshot = salesTakeStorageSnapshot(storageKeys);
-
-
-  // ========================================
-  // 16. SAVE EVERYTHING
-  // ========================================
-
   let invoiceNumber;
 
   try {
-
-    // Generate invoice number.
-    invoiceNumber = generateSalesInvoiceNumber(date, sales);
-
-
-    // --------------------------------------
-    // DEDUCT INVENTORY
-    // --------------------------------------
-
-    requestedByItem.forEach(requested => {
-
-      const stockItem = inventory.find(
-        item => item.name === requested.itemName
-      );
-
-      stockItem.quantity =
-        Number(stockItem.quantity) - requested.quantity;
-
-      stockItem.weightGrams = Number(
-        (
-          Number(stockItem.weightGrams) -
-          requested.weightGrams
-        ).toFixed(3)
-      );
-
-    });
-
-
-    // --------------------------------------
-    // CREATE SALE RECORD
-    // --------------------------------------
-
-    const totalQuantity = invoiceItems.reduce(
-      (sum, item) => sum + item.quantity,
-      0
+    const { data, error } = await VasundharaDB.supabase.rpc(
+      "create_sales_invoice",
+      {
+        p_customer_mobile: mobile,
+        p_date: date,
+        p_final_amount: finalAmount,
+        p_profit: profit,
+        p_cash: paymentAllocations.cash,
+        p_upi: paymentAllocations.upi,
+        p_committee: paymentAllocations.committee,
+        p_advance_jama: paymentAllocations.advanceJama,
+        p_udhar: paymentAllocations.udhar,
+        p_items: invoiceItems
+      }
     );
 
-    const totalWeight = Number(
-      invoiceItems.reduce(
-        (sum, item) => sum + item.weightGrams,
-        0
-      ).toFixed(3)
-    );
-
-    const newSale = {
-
-      invoiceNumber,
-
-      customerMobile: customer.mobile,
-
-      customerName: customer.name,
-
-      date,
-
-      // Complete item list for the invoice.
-      items: invoiceItems,
-
-      // Keep summary fields for compatibility
-      // with the older sales data format.
-      itemName: invoiceItems.map(
-        item => item.itemName
-      ).join(", "),
-
-      quantity: totalQuantity,
-
-      weightGrams: totalWeight,
-
-      finalAmount,
-
-      profit,
-
-      paymentAllocations,
-
-      paymentStatus: "paid",
-
-      createdAt: new Date().toISOString()
-
-    };
-
-
-    // --------------------------------------
-    // SAVE INVENTORY AND SALES
-    // --------------------------------------
-
-    saveSalesInventoryRecords(inventory);
-
-    sales.push(newSale);
-
-    saveSales(sales);
-
-
-    // ======================================
-    // 17. CASH AND UPI IN CASH/BANK
-    // ======================================
-
-    if (
-      paymentAllocations.cash > 0 ||
-      paymentAllocations.upi > 0
-    ) {
-
-      if (
-        typeof loadCashTransactions !== "function" ||
-        typeof saveCashTransactions !== "function"
-      ) {
-
-        throw new Error(
-          "Cash/Bank module is not loaded."
-        );
-
-      }
-
-      const cashRecords = loadCashTransactions();
-
-      const createdAt = new Date().toISOString();
-
-
-      // CASH ENTRY
-
-      if (paymentAllocations.cash > 0) {
-
-        cashRecords.push({
-
-          id: "SALE-CASH-" + invoiceNumber,
-
-          date,
-
-          account: "cash",
-
-          direction: "in",
-
-          amount: paymentAllocations.cash,
-
-          purpose: "sales",
-
-          customerMobile: customer.mobile,
-
-          customerName: customer.name,
-
-          details: "Sale invoice " + invoiceNumber,
-
-          reference: invoiceNumber,
-
-          createdAt
-
-        });
-
-      }
-
-
-      // UPI / BANK ENTRY
-
-      if (paymentAllocations.upi > 0) {
-
-        cashRecords.push({
-
-          id: "SALE-UPI-" + invoiceNumber,
-
-          date,
-
-          account: "bank",
-
-          direction: "in",
-
-          amount: paymentAllocations.upi,
-
-          purpose: "sales",
-
-          customerMobile: customer.mobile,
-
-          customerName: customer.name,
-
-          details: "Sale invoice " + invoiceNumber + " (UPI / Bank)",
-
-          reference: invoiceNumber,
-
-          createdAt
-
-        });
-
-      }
-
-
-      saveCashTransactions(cashRecords);
-
+    if (error) {
+      throw error;
     }
 
-
-    // ======================================
-    // 18. ADVANCE JAMA SETTLEMENT
-    // ======================================
-
-    if (paymentAllocations.advanceJama > 0) {
-
-      const result = applyJamaUdharSettlement({
-
-        customerMobile: mobile,
-
-        balanceType: "jama",
-
-        amount: paymentAllocations.advanceJama,
-
-        date,
-
-        source: "sale",
-
-        reference: invoiceNumber
-
-      });
-
-
-      if (
-        !result ||
-        salesToPaise(result.appliedAmount || 0) !==
-          salesToPaise(paymentAllocations.advanceJama) ||
-        salesToPaise(result.unappliedAmount || 0) !== 0
-      ) {
-
-        throw new Error(
-          "The full Advance Jama amount could not be applied."
-        );
-
-      }
-
+    if (!data || !data.success || !data.invoiceNumber) {
+      throw new Error("The invoice could not be confirmed by the database.");
     }
 
-
-    // ======================================
-    // 19. AUTOMATIC UDHAR ENTRY
-    // ======================================
-
-    if (paymentAllocations.udhar > 0) {
-
-      addJamaUdharEntry({
-
-        customerMobile: mobile,
-
-        type: "udhar",
-
-        amount: paymentAllocations.udhar,
-
-        date,
-
-        notes:
-          "Udhar from sale of " +
-          invoiceItems.map(item =>
-            item.itemName +
-            " (" + item.quantity + " pcs)"
-          ).join(", "),
-
-        source: "sale",
-
-        reference: invoiceNumber
-
-      });
-
-
-      // Verify that the new Udhar entry exists.
-      const jamaRecords = JSON.parse(
-        localStorage.getItem(SALES_JAMA_STORAGE_KEY)
-      ) || [];
-
-
-      const matchingUdhar = jamaRecords.some(record => {
-
-        return (
-          String(record.customerMobile) === mobile &&
-          record.type === "udhar" &&
-          String(record.reference || "") === invoiceNumber &&
-          salesToPaise(record.originalAmount || 0) ===
-            salesToPaise(paymentAllocations.udhar)
-        );
-
-      });
-
-
-      if (!matchingUdhar) {
-
-        throw new Error(
-          "The Udhar entry could not be verified."
-        );
-
-      }
-
-    }
-
+    invoiceNumber = data.invoiceNumber;
 
   } catch (error) {
-
-    // Restore all affected data if any step fails.
-    salesRestoreStorageSnapshot(snapshot);
-
     console.error("Sale save failed:", error);
 
     toast(
@@ -1937,7 +1456,6 @@ document.addEventListener("submit", function(event) {
     );
 
     return;
-
   }
 
 
@@ -1981,101 +1499,101 @@ document.addEventListener("input", function(event) {
 // 22. EXPORT SALES TO CSV
 // ==========================================
 
-document.addEventListener("click", function(event) {
+
+document.addEventListener("click", async function(event) {
 
   if (event.target.id !== "salesExport") return;
 
-  const sales = loadSales();
+  try {
+    const [
+      { data: sales, error: salesError },
+      { data: saleItems, error: itemsError }
+    ] = await Promise.all([
+      VasundharaDB.select("sales"),
+      VasundharaDB.select("sale_items")
+    ]);
 
-  const headers = [
+    if (salesError) throw salesError;
+    if (itemsError) throw itemsError;
 
-    "Invoice number",
-    "Customer mobile",
-    "Customer name",
-    "Date",
-    "Items",
-    "Total quantity",
-    "Total weight (grams)",
-    "Final amount",
-    "Profit",
-    "Cash",
-    "UPI / Bank",
-    "Committee",
-    "Advance Jama",
-    "Udhar"
+    const itemsBySale = {};
 
-  ];
+    (saleItems || []).forEach(item => {
+      if (!itemsBySale[item.sale_id]) {
+        itemsBySale[item.sale_id] = [];
+      }
 
+      itemsBySale[item.sale_id].push({
+        itemName: item.item_name,
+        quantity: Number(item.quantity),
+        weightGrams: Number(item.weight_grams)
+      });
+    });
 
-  const rows = sales.map(sale => {
-
-    const payments = sale.paymentAllocations || {};
-
-    return [
-
-      sale.invoiceNumber,
-
-      sale.customerMobile,
-
-      sale.customerName,
-
-      sale.date,
-
-      salesGetItemSummary(sale),
-
-      salesGetTotalQuantity(sale),
-
-      salesGetTotalWeight(sale),
-
-      sale.finalAmount,
-
-      sale.profit,
-
-      payments.cash || 0,
-
-      payments.upi || 0,
-
-      payments.committee || 0,
-
-      payments.advanceJama || 0,
-
-      payments.udhar || 0
-
+    const headers = [
+      "Invoice number",
+      "Customer mobile",
+      "Customer name",
+      "Date",
+      "Items",
+      "Total quantity",
+      "Total weight (grams)",
+      "Final amount",
+      "Profit",
+      "Cash",
+      "UPI / Bank",
+      "Committee",
+      "Advance Jama",
+      "Udhar"
     ];
 
-  });
+    const rows = (sales || []).map(sale => {
+      const invoice = {
+        items: itemsBySale[sale.id] || []
+      };
 
+      return [
+        sale.invoice_number,
+        sale.customer_mobile,
+        sale.customer_name,
+        sale.date,
+        salesGetItemSummary(invoice),
+        salesGetTotalQuantity(invoice),
+        salesGetTotalWeight(invoice),
+        sale.final_amount,
+        sale.profit,
+        sale.cash,
+        sale.upi,
+        sale.committee,
+        sale.advance_jama,
+        sale.udhar
+      ];
+    });
 
-  const csv = [headers, ...rows]
+    const csv = [headers, ...rows]
+      .map(row => row.map(value =>
+        `"${String(value ?? "").replace(/"/g, '""')}"`
+      ).join(","))
+      .join("\n");
 
-    .map(row => row.map(value =>
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;"
+    });
 
-      `"${String(value ?? "").replace(/"/g, '""')}"`
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
 
-    ).join(","))
+    link.href = url;
+    link.download = "sales.csv";
+    link.click();
 
-    .join("\n");
+    URL.revokeObjectURL(url);
 
+    toast("Sales CSV exported.");
 
-  const blob = new Blob([csv], {
-
-    type: "text/csv;charset=utf-8;"
-
-  });
-
-
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement("a");
-
-  link.href = url;
-
-  link.download = "sales.csv";
-
-  link.click();
-
-  URL.revokeObjectURL(url);
-
-  toast("Sales CSV exported.");
+  } catch (error) {
+    console.error("Sales CSV export failed:", error);
+    toast("Unable to export Sales CSV. Please try again.");
+  }
 
 });
