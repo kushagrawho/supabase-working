@@ -100,14 +100,15 @@
 
     // Make the shared helpers available to other JS files.
     window.VasundharaDB = {
-        supabase,
-        getCurrentUser,
-        requireAuth,
-        select: dbSelect,
-        insert: dbInsert,
-        update: dbUpdate,
-        delete: dbDelete
-    };
+    supabase,
+    getCurrentUser,
+    requireAuth,
+    select: dbSelect,
+    insert: dbInsert,
+    update: dbUpdate,
+    delete: dbDelete,
+    rpc: (functionName, params = {}) => supabase.rpc(functionName, params)
+};
 
     console.log("Vasundhara database helpers initialized.");
 

@@ -4,29 +4,106 @@
 // Type B: Rotating Lottery Committee
 // ==========================================
 
-const COMMITTEE_STORAGE_KEY = "bizpilot_committees_v1";
+let committeeCache = [];
 
-// ---------- STORAGE ----------
+async function loadCommitteesFromSupabase() {
+    const [
+        committeesResult,
+        membersResult,
+        paymentsResult,
+        drawsResult,
+        usagesResult
+    ] = await Promise.all([
+        VasundharaDB.select("committees"),
+        VasundharaDB.select("committee_members"),
+        VasundharaDB.select("committee_payments"),
+        VasundharaDB.select("committee_draws"),
+        VasundharaDB.select("committee_usages")
+    ]);
 
-function loadCommittees() {
-    try {
-        const records = JSON.parse(
-            localStorage.getItem(COMMITTEE_STORAGE_KEY)
-        ) || [];
+    const results = [
+        committeesResult,
+        membersResult,
+        paymentsResult,
+        drawsResult,
+        usagesResult
+    ];
 
-        return Array.isArray(records) ? records : [];
-    } catch (error) {
-        console.error("Could not load committees:", error);
-        return [];
+    const failed = results.find(result => result.error);
+
+    if (failed) {
+        throw failed.error;
     }
+
+    const committees = committeesResult.data || [];
+    const members = membersResult.data || [];
+    const payments = paymentsResult.data || [];
+    const draws = drawsResult.data || [];
+    const usages = usagesResult.data || [];
+
+    return committees.map(committee => {
+        const committeeMembers = members.filter(
+            member => member.committee_id === committee.id
+        );
+
+        return {
+            id: committee.committee_id,
+            dbId: committee.id,
+            name: committee.name,
+            memberCount: committee.member_count,
+            monthlyAmount: Number(committee.monthly_amount),
+            monthlyPool: Number(committee.monthly_pool),
+            startDate: committee.start_date,
+            endDate: committee.end_date,
+            dueDay: committee.due_day,
+            status: committee.status,
+            createdAt: committee.created_at,
+            closedAt: committee.closed_at,
+
+            members: committeeMembers.map(member => ({
+                mobile: member.mobile,
+                name: member.name,
+                won: member.won,
+                payoutTotal: Number(member.payout_total),
+                payoutUsed: Number(member.payout_used),
+                payoutRemaining: Number(member.payout_remaining)
+            })),
+
+            payments: payments
+                .filter(payment => payment.committee_id === committee.id)
+                .map(payment => ({
+                    mobile: payment.mobile,
+                    memberName: payment.member_name,
+                    month: payment.month,
+                    date: payment.date,
+                    amount: Number(payment.amount)
+                })),
+
+            draws: draws
+                .filter(draw => draw.committee_id === committee.id)
+                .map(draw => ({
+                    month: draw.month,
+                    date: draw.date,
+                    winnerMobile: draw.winner_mobile,
+                    winnerName: draw.winner_name,
+                    payoutAmount: Number(draw.payout_amount),
+                    payoutUsed: Number(draw.payout_used),
+                    payoutRemaining: Number(draw.payout_remaining)
+                })),
+
+            usages: usages
+                .filter(usage => usage.committee_id === committee.id)
+                .map(usage => ({
+                    mobile: usage.mobile,
+                    memberName: usage.member_name,
+                    date: usage.date,
+                    amount: Number(usage.amount),
+                    details: usage.details
+                }))
+        };
+    });
 }
 
-function saveCommittees(records) {
-    localStorage.setItem(
-        COMMITTEE_STORAGE_KEY,
-        JSON.stringify(records)
-    );
-}
 
 // ---------- HELPERS ----------
 
@@ -75,26 +152,8 @@ function committeeFormSuffix(committeeId, mobile = "") {
         .replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
-function committeeCustomer(mobile) {
-    try {
-        const customers = JSON.parse(
-            localStorage.getItem("bizpilot_customers_v1")
-        ) || [];
-
-        const target = committeeNormalizeMobile(mobile);
-
-        return customers.find(customer =>
-            committeeNormalizeMobile(customer.mobile) === target
-        ) || null;
-
-    } catch (error) {
-        console.error("Could not find customer:", error);
-        return null;
-    }
-}
-
-function committeeAvailableAmount() {
-    return loadCommittees().reduce((total, committee) => {
+function committeeAvailableAmount(committees = committeeCache) {
+    return committees.reduce((total, committee) => {
         if (committee.status !== "ongoing") return total;
 
         return total + (committee.members || []).reduce(
@@ -105,9 +164,10 @@ function committeeAvailableAmount() {
     }, 0);
 }
 
+
 // ---------- CREATE COMMITTEE ----------
 
-function createCommittee() {
+async function createCommittee() {
     const name = document.getElementById("committeeName").value.trim();
 
     const memberCount = Number(
@@ -144,34 +204,34 @@ function createCommittee() {
         return;
     }
 
-    const committees = loadCommittees();
+    const committeeId = "COM-" + Date.now();
 
-    committees.push({
-        id: "COM-" + Date.now(),
+    const { data, error } = await VasundharaDB.insert("committees", {
+        committee_id: committeeId,
         name,
-        memberCount,
-        monthlyAmount,
-        monthlyPool: memberCount * monthlyAmount,
-        startDate,
-        endDate,
-        dueDay,
-        status: "ongoing",
-        members: [],
-        payments: [],
-        draws: [],
-        usages: [],
-        createdAt: new Date().toISOString()
+        member_count: memberCount,
+        monthly_amount: monthlyAmount,
+        monthly_pool: memberCount * monthlyAmount,
+        start_date: startDate,
+        end_date: endDate,
+        due_day: dueDay,
+        status: "ongoing"
     });
 
-    saveCommittees(committees);
-    renderCommitteePage();
+    if (error) {
+        console.error("Error creating committee:", error);
+        alert("Could not create committee. Please try again.");
+        return;
+    }
 
+    await render("committee");
     alert("Committee created. Now add its members.");
 }
 
+
 // ---------- ADD COMMITTEE MEMBER ----------
 
-function addCommitteeMember(committeeId) {
+async function addCommitteeMember(committeeId) {
     const suffix = committeeFormSuffix(committeeId);
 
     const input = document.getElementById(
@@ -186,7 +246,18 @@ function addCommitteeMember(committeeId) {
         return;
     }
 
-    const customer = committeeCustomer(mobile);
+    const { data: customers, error: customerError } =
+        await VasundharaDB.select("customers");
+
+    if (customerError) {
+        console.error("Error loading customer:", customerError);
+        alert("Could not verify the customer. Please try again.");
+        return;
+    }
+
+    const customer = (customers || []).find(item =>
+        committeeNormalizeMobile(item.mobile) === normalizedMobile
+    );
 
     if (!customer) {
         alert(
@@ -195,14 +266,12 @@ function addCommitteeMember(committeeId) {
         return;
     }
 
-    const committees = loadCommittees();
-
-    const committee = committees.find(
+    const committee = committeeCache.find(
         item => String(item.id) === String(committeeId)
     );
 
     if (!committee) {
-        alert("Committee not found.");
+        alert("Committee not found. Please refresh the page.");
         return;
     }
 
@@ -227,22 +296,29 @@ function addCommitteeMember(committeeId) {
         return;
     }
 
-    committee.members.push({
+    const { error } = await VasundharaDB.insert("committee_members", {
+        committee_id: committee.dbId,
         mobile: String(customer.mobile).trim(),
         name: customer.name,
         won: false,
-        payoutTotal: 0,
-        payoutUsed: 0,
-        payoutRemaining: 0
+        payout_total: 0,
+        payout_used: 0,
+        payout_remaining: 0
     });
 
-    saveCommittees(committees);
-    renderCommitteePage();
+    if (error) {
+        console.error("Error adding committee member:", error);
+        alert("Could not add this member. Please try again.");
+        return;
+    }
+
+    await render("committee");
 }
+
 
 // ---------- RECORD MONTHLY PAYMENT ----------
 
-function recordCommitteePayment(committeeId, mobile) {
+async function recordCommitteePayment(committeeId, mobile) {
     const suffix = committeeFormSuffix(committeeId, mobile);
 
     const date = document.getElementById(
@@ -269,9 +345,7 @@ function recordCommitteePayment(committeeId, mobile) {
         return;
     }
 
-    const committees = loadCommittees();
-
-    const committee = committees.find(
+    const committee = committeeCache.find(
         item => String(item.id) === String(committeeId)
     );
 
@@ -324,24 +398,29 @@ function recordCommitteePayment(committeeId, mobile) {
         return;
     }
 
-    committee.payments.push({
-        id: "PAY-" + Date.now(),
+    const { error } = await VasundharaDB.insert("committee_payments", {
+        committee_id: committee.dbId,
         mobile: member.mobile,
-        memberName: member.name,
+        member_name: member.name,
         month,
         date,
         amount
     });
 
-    saveCommittees(committees);
-    renderCommitteePage();
+    if (error) {
+        console.error("Error recording committee payment:", error);
+        alert("Could not record committee payment. Please try again.");
+        return;
+    }
 
+    await render("committee");
     alert("Committee payment recorded.");
 }
 
+
 // ---------- RECORD MONTHLY WINNER ----------
 
-function recordCommitteeWinner(committeeId) {
+async function recordCommitteeWinner(committeeId) {
     const suffix = committeeFormSuffix(committeeId);
 
     const winnerMobile = document.getElementById(
@@ -368,9 +447,7 @@ function recordCommitteeWinner(committeeId) {
         return;
     }
 
-    const committees = loadCommittees();
-
-    const committee = committees.find(
+    const committee = committeeCache.find(
         item => String(item.id) === String(committeeId)
     );
 
@@ -414,33 +491,30 @@ function recordCommitteeWinner(committeeId) {
         return;
     }
 
-    winner.won = true;
-    winner.payoutTotal =
-        (Number(winner.payoutTotal) || 0) + payoutAmount;
+    const { error } = await VasundharaDB.rpc(
+        "record_committee_winner",
+        {
+            p_committee_id: committee.dbId,
+            p_winner_mobile: winner.mobile,
+            p_draw_date: drawDate,
+            p_payout_amount: payoutAmount
+        }
+    );
 
-    winner.payoutRemaining =
-        (Number(winner.payoutRemaining) || 0) + payoutAmount;
+    if (error) {
+        console.error("Error recording committee winner:", error);
+        alert(error.message || "Could not record the committee winner.");
+        return;
+    }
 
-    committee.draws.push({
-        id: "DRAW-" + Date.now(),
-        month: committeeMonth(drawDate),
-        date: drawDate,
-        winnerMobile: winner.mobile,
-        winnerName: winner.name,
-        payoutAmount,
-        payoutUsed: 0,
-        payoutRemaining: payoutAmount
-    });
-
-    saveCommittees(committees);
-    renderCommitteePage();
-
-    alert("Committee winner and payout recorded.");
+    await render("committee");
+    alert("Committee winner recorded successfully.");
 }
+
 
 // ---------- RECORD PAYOUT USAGE ----------
 
-function recordCommitteePayoutUsage(committeeId, mobile) {
+async function recordCommitteePayoutUsage(committeeId, mobile) {
     const suffix = committeeFormSuffix(committeeId, mobile);
 
     const amount = Number(
@@ -464,9 +538,7 @@ function recordCommitteePayoutUsage(committeeId, mobile) {
         return;
     }
 
-    const committees = loadCommittees();
-
-    const committee = committees.find(
+    const committee = committeeCache.find(
         item => String(item.id) === String(committeeId)
     );
 
@@ -496,67 +568,32 @@ function recordCommitteePayoutUsage(committeeId, mobile) {
         return;
     }
 
-    member.payoutUsed =
-        (Number(member.payoutUsed) || 0) + amount;
-
-    member.payoutRemaining =
-        (Number(member.payoutRemaining) || 0) - amount;
-
-    // Reduce the remaining amount from this member's latest
-    // payout records first.
-    let remainingToApply = amount;
-
-    for (
-        let i = committee.draws.length - 1;
-        i >= 0 && remainingToApply > 0;
-        i--
-    ) {
-        const draw = committee.draws[i];
-
-        if (
-            committeeNormalizeMobile(draw.winnerMobile) !== targetMobile ||
-            Number(draw.payoutRemaining) <= 0
-        ) {
-            continue;
+    const { error } = await VasundharaDB.rpc(
+        "record_committee_payout_usage",
+        {
+            p_committee_id: committee.dbId,
+            p_mobile: member.mobile,
+            p_date: date,
+            p_amount: amount,
+            p_details: details
         }
+    );
 
-        const applied = Math.min(
-            Number(draw.payoutRemaining),
-            remainingToApply
-        );
-
-        draw.payoutUsed =
-            (Number(draw.payoutUsed) || 0) + applied;
-
-        draw.payoutRemaining =
-            Number(draw.payoutRemaining) - applied;
-
-        remainingToApply -= applied;
+    if (error) {
+        console.error("Error recording payout usage:", error);
+        alert(error.message || "Could not record payout usage.");
+        return;
     }
 
-    committee.usages = committee.usages || [];
-
-    committee.usages.push({
-        id: "USE-" + Date.now(),
-        mobile: member.mobile,
-        memberName: member.name,
-        date,
-        amount,
-        details
-    });
-
-    saveCommittees(committees);
-    renderCommitteePage();
-
-    alert("Payout usage recorded. Available committee amount has been reduced.");
+    await render("committee");
+    alert("Payout usage recorded successfully.");
 }
+
 
 // ---------- CLOSE COMMITTEE ----------
 
-function closeCommittee(committeeId) {
-    const committees = loadCommittees();
-
-    const committee = committees.find(
+async function closeCommittee(committeeId) {
+    const committee = committeeCache.find(
         item => String(item.id) === String(committeeId)
     );
 
@@ -568,12 +605,24 @@ function closeCommittee(committeeId) {
 
     if (!confirmed) return;
 
-    committee.status = "closed";
-    committee.closedAt = committeeToday();
+    const { error } = await VasundharaDB.update(
+        "committees",
+        {
+            status: "closed",
+            closed_at: committeeToday()
+        },
+        { id: committee.dbId }
+    );
 
-    saveCommittees(committees);
-    renderCommitteePage();
+    if (error) {
+        console.error("Error closing committee:", error);
+        alert(error.message || "Could not close committee.");
+        return;
+    }
+
+    await render("committee");
 }
+
 
 // ---------- PAYMENT STATUS ----------
 
@@ -591,6 +640,7 @@ function committeePaymentStatus(committee, member, month) {
 
     return committeeToday() > dueDate ? "Overdue" : "Due";
 }
+
 
 // ---------- COMMITTEE MONTHS ----------
 
@@ -622,6 +672,7 @@ function committeeMonths(committee) {
     return months;
 }
 
+
 // ---------- SEARCH ----------
 
 function committeeSearch() {
@@ -634,6 +685,7 @@ function committeeSearch() {
             card.textContent.toLowerCase().includes(search) ? "" : "none";
     });
 }
+
 
 // ---------- RENDER COMMITTEE DETAILS ----------
 
@@ -978,21 +1030,14 @@ function renderCommitteeDetails(committee) {
     `;
 }
 
+
 // ---------- MAIN COMMITTEE PAGE ----------
 
-function renderCommitteePage() {
-    const main = document.querySelector("main");
+async function renderCommitteePage() {
+    const committees = await loadCommitteesFromSupabase();
+    committeeCache = committees;
 
-    if (!main) {
-        console.error("Main content container not found.");
-        return;
-    }
-
-    const committees = loadCommittees();
-
-    const ongoing = committees.filter(
-        item => item.status === "ongoing"
-    );
+    const ongoing = committees.filter(c => c.status === "ongoing");
 
     const totalMembers = ongoing.reduce(
         (sum, item) => sum + (item.members || []).length,
@@ -1034,7 +1079,7 @@ function renderCommitteePage() {
 
     }, 0);
 
-    main.innerHTML = `
+    return `
         <div class="committee-page">
 
             <h2>Committee Management</h2>
