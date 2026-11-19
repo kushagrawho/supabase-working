@@ -21,57 +21,455 @@ const pageContent = $("#pageContent");
 function money(n){return "₹"+Number(n).toLocaleString("en-IN")}
 function toast(msg){const t=$("#toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2300)}
 function stat(label,value,foot,icon){return `<div class="stat-card"><div class="stat-top">${label}<span class="stat-icon">${icon}</span></div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></div>`}
-function overview(){
- const now=new Date(), currentMonth=ovMonthKey(now);
- const previousDate=new Date(now.getFullYear(),now.getMonth()-1,1), previousMonth=ovMonthKey(previousDate);
- const sales=ovRead("bizpilot_sales_v1"), jama=ovRead("bizpilot_jama_udhar_v1");
- const cash=ovRead("bizpilot_cash_bank_v1"), committees=ovRead("bizpilot_committees_v1");
- const currentSales=sales.filter(s=>ovMonthKeyFromDate(s.date)===currentMonth);
- const previousSales=sales.filter(s=>ovMonthKeyFromDate(s.date)===previousMonth);
- const currentTotalSales=ovSum(currentSales,s=>s.finalAmount), previousTotalSales=ovSum(previousSales,s=>s.finalAmount);
- const expenses=cash.filter(t=>ovMonthKeyFromDate(t.date)===currentMonth&&t.direction==="out"&&(t.purpose==="house_expense"||t.purpose==="loss"));
- const oldExpenses=cash.filter(t=>ovMonthKeyFromDate(t.date)===previousMonth&&t.direction==="out"&&(t.purpose==="house_expense"||t.purpose==="loss"));
- const expenseTotal=ovSum(expenses,t=>t.amount), previousExpenseTotal=ovSum(oldExpenses,t=>t.amount);
- const previousProfit=ovSum(previousSales,s=>s.profit);
- const udharRecords=jama.filter(r=>r.type==="udhar"&&Number(r.remainingAmount)>0);
- const jamaTotal=ovSum(jama.filter(r=>r.type==="jama"),r=>r.remainingAmount);
- const udharTotal=ovSum(udharRecords,r=>r.remainingAmount);
- let expected=0,received=0,unused=0;
- committees.forEach(c=>{
-  if(c.status!=="ongoing")return;
-  if(currentMonth>=ovMonthKeyFromDate(c.startDate)&&currentMonth<=ovMonthKeyFromDate(c.endDate)){
-   expected+=(Number(c.memberCount)||0)*(Number(c.monthlyAmount)||0);
-   received+=(c.payments||[]).filter(p=>p.month===currentMonth).reduce((n,p)=>n+(Number(p.amount)||0),0);
-  }
-  unused+=(c.members||[]).reduce((n,m)=>n+Math.max(0,Number(m.payoutRemaining)||0),0);
- });
- const unpaid=Math.max(0,expected-received), net=udharTotal-jamaTotal+unpaid-unused;
- const salesChange=ovCompare(currentTotalSales,previousTotalSales), expenseChange=ovCompare(expenseTotal,previousExpenseTotal);
- const months=[];
- for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1),key=ovMonthKey(d);
-  months.push({label:d.toLocaleDateString("en-IN",{month:"short"}),profit:ovSum(sales.filter(s=>ovMonthKeyFromDate(s.date)===key),s=>s.profit)});
- }
- const max=Math.max(1,...months.map(m=>Math.abs(m.profit)));
- const bars=months.map(m=>{
-  const h=Math.max(3,Math.round(Math.abs(m.profit)/max*100));
-  return '<div class="ov-chart-column"><div class="ov-chart-value">'+ovMoney(m.profit)+'</div><div class="ov-chart-track"><div class="ov-chart-bar '+(m.profit<0?'negative':'')+'" style="height:'+h+'%"></div></div><span>'+m.label+'</span></div>';
- }).join("");
- const salesFoot=previousTotalSales>0?'<span class="'+salesChange.className+'">'+salesChange.text+'</span> vs previous month':(currentTotalSales>0?'Sales recorded; no previous-month base':'No sales recorded this month');
- const expenseFoot=previousExpenseTotal>0?'<span class="'+expenseChange.className+'">'+expenseChange.text+'</span> vs previous month':(expenseTotal>0?'Expenses recorded; no previous-month base':'No house expenses or losses this month');
- const netClass=net>0?'positive':net<0?'negative':'';
- const netLabel=net>0?'Net amount to receive':net<0?'Net amount payable':'Receivables and liabilities balanced';
- const customers=new Set(udharRecords.map(r=>r.customerMobile||r.customerName||'unknown'));
- return '<div class="stats-grid ov-stats-grid">'+
- ovStat('Total sales',ovMoney(currentTotalSales),salesFoot,'↗')+
- '<div class="stat-card"><div class="stat-top">Total receivables<span class="stat-icon">⇄</span></div><div class="stat-value '+netClass+'">'+ovMoney(Math.abs(net))+(net<0?' payable':'')+'</div><div class="stat-foot '+netClass+'">'+netLabel+'</div></div>'+
- ovStat('Total expenses',ovMoney(expenseTotal),expenseFoot,'↘')+
- ovStat('Previous month profit',ovMoney(previousProfit),previousDate.toLocaleDateString('en-IN',{month:'long',year:'numeric'}),'◈')+
- '</div><div class="ov-lower-grid"><section class="panel ov-profit-panel"><div class="panel-head"><div><h3>Monthly profit</h3><div class="panel-sub">Invoice profit over the last 12 months</div></div><button class="muted-link" data-page="reports">View reports →</button></div><div class="ov-chart">'+bars+'</div></section>'+
- '<section class="panel ov-alert-panel"><div class="panel-head"><div><h3>Pending attention</h3><div class="panel-sub">Outstanding balances that need follow-up</div></div></div>'+
- '<div class="ov-alert-item"><span class="ov-alert-icon udhar">!</span><div class="ov-alert-copy"><b>Outstanding Udhar</b><small>'+udharRecords.length+' outstanding record(s) · '+customers.size+' customer(s)</small></div><strong>'+ovMoney(udharTotal)+'</strong></div>'+
- '<div class="ov-alert-item"><span class="ov-alert-icon committee">◎</span><div class="ov-alert-copy"><b>Unpaid committee contributions</b><small>Expected monthly contributions still unpaid</small></div><strong>'+ovMoney(unpaid)+'</strong></div>'+
- '<div class="ov-alert-footer">Current month: '+now.toLocaleDateString('en-IN',{month:'long',year:'numeric'})+'</div></section></div>';
+
+let ovDashboardPeriod = "month";
+let ovDashboardCustomFrom = "";
+let ovDashboardCustomTo = "";
+
+function ovDashboardGetRange() {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    let from;
+    let to = today;
+
+    if (ovDashboardPeriod === "today") {
+        from = today;
+    } else if (ovDashboardPeriod === "week") {
+        from = new Date(today);
+        from.setDate(today.getDate() - 6);
+    } else if (ovDashboardPeriod === "quarter") {
+        const quarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
+        from = new Date(now.getFullYear(), quarterStartMonth, 1);
+    } else if (ovDashboardPeriod === "year") {
+        from = new Date(now.getFullYear(), 0, 1);
+    } else if (ovDashboardPeriod === "custom") {
+        from = ovDashboardCustomFrom
+            ? new Date(ovDashboardCustomFrom + "T00:00:00")
+            : new Date(now.getFullYear(), now.getMonth(), 1);
+
+        to = ovDashboardCustomTo
+            ? new Date(ovDashboardCustomTo + "T00:00:00")
+            : today;
+    } else {
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    const format = date =>
+        date.getFullYear() + "-" +
+        String(date.getMonth() + 1).padStart(2, "0") + "-" +
+        String(date.getDate()).padStart(2, "0");
+
+    return {
+        from: format(from),
+        to: format(to)
+    };
 }
+
+function ovDashboardInRange(date, from, to) {
+    return Boolean(date && date >= from && date <= to);
+}
+
+function ovDashboardMoney(value) {
+    return "₹" + (Number(value) || 0).toLocaleString("en-IN", {
+        maximumFractionDigits: 2
+    });
+}
+
+function ovDashboardCard(label, value, note, icon) {
+    return `
+        <div class="stat-card">
+            <div class="stat-top">
+                ${label}
+                <span class="stat-icon">${icon}</span>
+            </div>
+            <div class="stat-value">${value}</div>
+            <div class="stat-foot">${note}</div>
+        </div>
+    `;
+}
+
+async function overview() {
+    const [
+        salesResult,
+        jamaResult,
+        cashResult,
+        committees
+    ] = await Promise.all([
+        VasundharaDB.select("sales"),
+        VasundharaDB.select("jama_udhar"),
+        VasundharaDB.select("cash_bank_transactions"),
+        loadCommitteesFromSupabase(),
+        loadCashDataFromSupabase()
+    ]);
+
+    if (salesResult.error) throw salesResult.error;
+    if (jamaResult.error) throw jamaResult.error;
+    if (cashResult.error) throw cashResult.error;
+
+    const sales = (salesResult.data || []).map(sale => ({
+        ...sale,
+        finalAmount: Number(sale.final_amount) || 0,
+        profit: Number(sale.profit) || 0
+    }));
+
+    const jama = (jamaResult.data || []).map(record => ({
+        ...record,
+        remainingAmount: Number(record.remaining_amount) || 0
+    }));
+
+    const cashTransactions = (cashResult.data || []).map(record => ({
+        ...record,
+        amount: Number(record.amount) || 0
+    }));
+
+    const range = ovDashboardGetRange();
+
+    const selectedSales = sales.filter(sale =>
+        ovDashboardInRange(sale.date, range.from, range.to)
+    );
+
+    const selectedCash = cashTransactions.filter(record =>
+        ovDashboardInRange(record.date, range.from, range.to)
+    );
+
+    const revenue = selectedSales.reduce(
+        (sum, sale) => sum + sale.finalAmount, 0
+    );
+
+    const grossProfit = selectedSales.reduce(
+        (sum, sale) => sum + sale.profit, 0
+    );
+
+    const expenses = selectedCash.filter(record =>
+        record.direction === "out" &&
+        ["business_expense", "house_expense", "loss"].includes(record.purpose) &&
+        record.amount > 0
+    );
+
+    const totalExpenses = expenses.reduce(
+        (sum, record) => sum + record.amount, 0
+    );
+
+    const houseAndLoss = expenses
+        .filter(record =>
+            ["house_expense", "loss"].includes(record.purpose)
+        )
+        .reduce((sum, record) => sum + record.amount, 0);
+
+    // Matches the existing Reports page calculation.
+    const netProfit = grossProfit - houseAndLoss;
+
+    const profitMargin = revenue > 0
+        ? (netProfit / revenue) * 100
+        : 0;
+
+    const cashBalances = getCashBalances();
+    const cashBalance = Number(cashBalances.cash) || 0;
+    const bankBalance = Number(cashBalances.bank) || 0;
+
+    const udharRecords = jama.filter(record =>
+        record.type === "udhar" && record.remainingAmount > 0
+    );
+
+    const jamaRecords = jama.filter(record =>
+        record.type === "jama" && record.remainingAmount > 0
+    );
+
+    const udharTotal = udharRecords.reduce(
+        (sum, record) => sum + record.remainingAmount, 0
+    );
+
+    const jamaTotal = jamaRecords.reduce(
+        (sum, record) => sum + record.remainingAmount, 0
+    );
+
+    // Committee contribution calculations for the selected period.
+    const firstMonth = range.from.slice(0, 7);
+    const lastMonth = range.to.slice(0, 7);
+
+    let expectedContributions = 0;
+    let receivedContributions = 0;
+    let unusedPayouts = 0;
+    let activeCommittees = 0;
+
+    committees.forEach(committee => {
+        if (committee.status !== "ongoing") return;
+
+        activeCommittees++;
+
+        const startMonth = ovMonthKeyFromDate(committee.startDate);
+        const endMonth = ovMonthKeyFromDate(committee.endDate);
+
+        const first = startMonth > firstMonth ? startMonth : firstMonth;
+        const last = endMonth < lastMonth ? endMonth : lastMonth;
+
+        if (first && last && first <= last) {
+            const startDate = new Date(first + "-01T00:00:00");
+            const endDate = new Date(last + "-01T00:00:00");
+
+            for (
+                let d = new Date(startDate);
+                d <= endDate;
+                d.setMonth(d.getMonth() + 1)
+            ) {
+                const month = ovMonthKey(d);
+
+                expectedContributions +=
+                    (Number(committee.memberCount) || 0) *
+                    (Number(committee.monthlyAmount) || 0);
+
+                receivedContributions += (committee.payments || [])
+                    .filter(payment => payment.month === month)
+                    .reduce((sum, payment) =>
+                        sum + (Number(payment.amount) || 0), 0);
+            }
+        }
+
+        unusedPayouts += (committee.members || []).reduce(
+            (sum, member) =>
+                sum + Math.max(0, Number(member.payoutRemaining) || 0),
+            0
+        );
+    });
+
+    const unpaidContributions = Math.max(
+        0,
+        expectedContributions - receivedContributions
+    );
+
+    // Last six months of sales and invoice profit.
+    const chartMonths = [];
+    const now = new Date();
+
+    for (let i = 5; i >= 0; i--) {
+        const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const key = ovMonthKey(date);
+
+        const monthSales = sales.filter(sale =>
+            ovMonthKeyFromDate(sale.date) === key
+        );
+
+        chartMonths.push({
+            label: date.toLocaleDateString("en-IN", { month: "short" }),
+            revenue: monthSales.reduce(
+                (sum, sale) => sum + sale.finalAmount, 0
+            ),
+            profit: monthSales.reduce(
+                (sum, sale) => sum + sale.profit, 0
+            )
+        });
+    }
+
+    const maxChartValue = Math.max(
+        1,
+        ...chartMonths.flatMap(month => [
+            month.revenue,
+            Math.abs(month.profit)
+        ])
+    );
+
+    const chartBars = chartMonths.map(month => {
+        const revenueHeight = Math.max(
+            2, month.revenue / maxChartValue * 100
+        );
+
+        const profitHeight = Math.max(
+            2, Math.abs(month.profit) / maxChartValue * 100
+        );
+
+        return `
+            <div class="ov-trend-column">
+                <div class="ov-trend-bars">
+                    <div class="ov-trend-bar revenue"
+                         style="height:${revenueHeight}%"
+                         title="Sales: ${ovDashboardMoney(month.revenue)}"></div>
+                    <div class="ov-trend-bar profit"
+                         style="height:${profitHeight}%"
+                         title="Profit: ${ovDashboardMoney(month.profit)}"></div>
+                </div>
+                <span>${month.label}</span>
+            </div>
+        `;
+    }).join("");
+
+    const periodLabel = {
+        today: "Today",
+        week: "Last 7 days",
+        month: "This month",
+        quarter: "This quarter",
+        year: "This year",
+        custom: "Custom period"
+    }[ovDashboardPeriod] || "This month";
+
+    const customDates = ovDashboardPeriod === "custom" ? `
+        <div class="ov-custom-dates">
+            <label>
+                From
+                <input type="date" id="ovFromDate"
+                    value="${range.from}">
+            </label>
+            <label>
+                To
+                <input type="date" id="ovToDate"
+                    value="${range.to}">
+            </label>
+            <button class="small-button" id="ovApplyDates">
+                Apply
+            </button>
+        </div>
+    ` : "";
+
+    return `
+        <div class="ov-dashboard">
+
+            <div class="ov-dashboard-header">
+                <div>
+                    <h2>Business performance</h2>
+                    <p class="panel-sub">
+                        Your financial position and business performance
+                    </p>
+                </div>
+
+                <div class="ov-period-control">
+                    <label for="ovPeriod">Reporting period</label>
+                    <select id="ovPeriod" class="search-input">
+                        <option value="today" ${ovDashboardPeriod === "today" ? "selected" : ""}>Today</option>
+                        <option value="week" ${ovDashboardPeriod === "week" ? "selected" : ""}>Last 7 days</option>
+                        <option value="month" ${ovDashboardPeriod === "month" ? "selected" : ""}>This month</option>
+                        <option value="quarter" ${ovDashboardPeriod === "quarter" ? "selected" : ""}>This quarter</option>
+                        <option value="year" ${ovDashboardPeriod === "year" ? "selected" : ""}>This year</option>
+                        <option value="custom" ${ovDashboardPeriod === "custom" ? "selected" : ""}>Custom</option>
+                    </select>
+                </div>
+            </div>
+
+            ${customDates}
+
+            <div class="ov-section-heading">
+                <h3>Financial performance</h3>
+                <span>${periodLabel}</span>
+            </div>
+
+            <div class="stats-grid ov-stats-grid">
+                ${ovDashboardCard(
+                    "Total sales",
+                    ovDashboardMoney(revenue),
+                    "Invoice revenue",
+                    "↗"
+                )}
+                ${ovDashboardCard(
+                    "Gross profit",
+                    ovDashboardMoney(grossProfit),
+                    "Profit recorded on invoices",
+                    "◈"
+                )}
+                ${ovDashboardCard(
+                    "Net profit",
+                    ovDashboardMoney(netProfit),
+                    "Invoice profit minus house expenses and losses",
+                    "₹"
+                )}
+                ${ovDashboardCard(
+                    "Profit margin",
+                    profitMargin.toFixed(1) + "%",
+                    "Net profit as a percentage of sales",
+                    "%"
+                )}
+            </div>
+
+            <section class="panel ov-panel">
+                <div class="panel-head">
+                    <div>
+                        <h3>Sales and profit trend</h3>
+                        <div class="panel-sub">
+                            Monthly sales revenue and invoice profit — last 6 months
+                        </div>
+                    </div>
+                    <button class="muted-link" data-page="reports">
+                        View reports →
+                    </button>
+                </div>
+
+                <div class="ov-trend-legend">
+                    <span><i class="revenue-dot"></i> Sales</span>
+                    <span><i class="profit-dot"></i> Invoice profit</span>
+                </div>
+
+                <div class="ov-trend-chart">
+                    ${chartBars}
+                </div>
+            </section>
+
+            <div class="ov-section-heading">
+                <h3>Cash and bank position</h3>
+                <span>Current balances</span>
+            </div>
+
+            <div class="ov-balance-grid">
+                <div class="panel ov-balance-card">
+                    <span>Cash in hand</span>
+                    <strong>${ovDashboardMoney(cashBalance)}</strong>
+                </div>
+                <div class="panel ov-balance-card">
+                    <span>Bank balance</span>
+                    <strong>${ovDashboardMoney(bankBalance)}</strong>
+                </div>
+                <div class="panel ov-balance-card highlight">
+                    <span>Total cash and bank</span>
+                    <strong>${ovDashboardMoney(cashBalance + bankBalance)}</strong>
+                </div>
+            </div>
+
+            <div class="ov-section-heading">
+                <h3>Customer balances</h3>
+                <span>Outstanding amounts</span>
+            </div>
+
+            <div class="ov-balance-grid">
+                <div class="panel ov-balance-card">
+                    <span>Outstanding Udhar</span>
+                    <strong>${ovDashboardMoney(udharTotal)}</strong>
+                    <small>${udharRecords.length} outstanding record(s)</small>
+                </div>
+                <div class="panel ov-balance-card">
+                    <span>Outstanding Jama</span>
+                    <strong>${ovDashboardMoney(jamaTotal)}</strong>
+                    <small>${jamaRecords.length} outstanding record(s)</small>
+                </div>
+            </div>
+
+            <div class="ov-section-heading">
+                <h3>Committee performance</h3>
+                <span>${activeCommittees} ongoing committee(s)</span>
+            </div>
+
+            <div class="ov-balance-grid">
+                <div class="panel ov-balance-card">
+                    <span>Expected contributions</span>
+                    <strong>${ovDashboardMoney(expectedContributions)}</strong>
+                </div>
+                <div class="panel ov-balance-card">
+                    <span>Received contributions</span>
+                    <strong>${ovDashboardMoney(receivedContributions)}</strong>
+                </div>
+                <div class="panel ov-balance-card">
+                    <span>Unpaid contributions</span>
+                    <strong>${ovDashboardMoney(unpaidContributions)}</strong>
+                </div>
+                <div class="panel ov-balance-card">
+                    <span>Unused payouts</span>
+                    <strong>${ovDashboardMoney(unusedPayouts)}</strong>
+                </div>
+            </div>
+
+            <div class="ov-dashboard-footer">
+                Reporting period: ${range.from} to ${range.to}
+            </div>
+        </div>
+    `;
+}
+
 function ovRead(key){try{const v=JSON.parse(localStorage.getItem(key)||"[]");return Array.isArray(v)?v:[];}catch(e){return [];}}
 function ovMonthKey(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
 function ovMonthKeyFromDate(v){if(!v||typeof v!=="string")return "";const m=v.match(/^(\d{4})-(\d{2})/);return m?m[1]+"-"+m[2]:"";}
@@ -106,8 +504,7 @@ function renderModule(key){
  if (key === "cash") return renderCashPage();
  if (key === "committee") return renderCommitteePage();
  if (key === "networth") {
-    renderNetWorthPage();
-    return "";
+    return renderNetWorthPage();
 }
 if (key === "reports") return renderProfitExpensePage();
  const configs={
@@ -127,6 +524,7 @@ if (key === "reports") return renderProfitExpensePage();
 
 let renderRequestId = 0;
 
+
 async function render(key) {
     const requestId = ++renderRequestId;
 
@@ -137,41 +535,81 @@ async function render(key) {
         key === "overview" ? "Good evening, Admin 👋" : pageInfo[key][0];
     $("#pageSubtitle").textContent = pageInfo[key][1];
 
-    document.querySelectorAll(".nav-item").forEach(b =>
-        b.classList.toggle("active", b.dataset.page === key)
+    document.querySelectorAll(".nav-item").forEach(button =>
+        button.classList.toggle("active", button.dataset.page === key)
     );
 
     $("#featureMenu").classList.remove("open");
     $("#featureButton").setAttribute("aria-expanded", "false");
 
-    if (key === "overview") {
-        pageContent.innerHTML = overview();
-        return;
-    }
-
-    pageContent.innerHTML = `<div class="empty-state">Loading...</div>`;
+    pageContent.innerHTML = `
+        <div class="empty-state">Loading...</div>
+    `;
 
     try {
-        const content = await renderModule(key);
+        const content = key === "overview"
+            ? await overview()
+            : await renderModule(key);
 
         // Ignore results from an older page request.
         if (requestId !== renderRequestId) return;
 
         pageContent.innerHTML = content ?? "";
+
         if (key === "cash") {
-    filterCashTransactions();
-}
+            filterCashTransactions();
+        }
+
+        // Overview date filter events.
+        if (key === "overview") {
+            const periodSelect = $("#ovPeriod");
+
+            if (periodSelect) {
+                periodSelect.addEventListener("change", () => {
+                    ovDashboardPeriod = periodSelect.value;
+                    render("overview");
+                });
+            }
+
+            const applyDates = $("#ovApplyDates");
+
+            if (applyDates) {
+                applyDates.addEventListener("click", () => {
+                    const from = $("#ovFromDate").value;
+                    const to = $("#ovToDate").value;
+
+                    if (!from || !to) {
+                        toast("Please select both dates.");
+                        return;
+                    }
+
+                    if (from > to) {
+                        toast("Start date cannot be after end date.");
+                        return;
+                    }
+
+                    ovDashboardCustomFrom = from;
+                    ovDashboardCustomTo = to;
+                    render("overview");
+                });
+            }
+        }
+
     } catch (error) {
         if (requestId !== renderRequestId) return;
 
         console.error("Page loading error:", error);
+
         pageContent.innerHTML = `
             <div class="empty-state">
                 Unable to load this page. Please try again.
+                <br>
+                <small>${error.message || "Please check your connection."}</small>
             </div>
         `;
     }
 }
+
 
 document.addEventListener("click",e=>{
  const page=e.target.closest("[data-page]");if(page){render(page.dataset.page);return}
@@ -191,5 +629,14 @@ pageContent.addEventListener("click",e=>{
  if(e.target.id==="dateApply")toast("Date range applied to the sample report.");
  if(e.target.id==="placeholderAction")toast("This section is ready for your business records.");
 });
-$("#today").textContent=new Date().toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"});
-render("overview");
+$("#today").textContent = new Date().toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+});
+
+window.vasundharaAuthReady.then(function (isAuthenticated) {
+    if (isAuthenticated) {
+        render("overview");
+    }
+});

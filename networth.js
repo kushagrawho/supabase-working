@@ -1,26 +1,14 @@
 
 // ==========================================
 // NET WORTH DASHBOARD
+// Supabase-connected version
 // ==========================================
 
-const NETWORTH_INVENTORY_KEY = "bizpilot_inventory_v1";
-const NETWORTH_JAMA_KEY = "bizpilot_jama_udhar_v1";
-const NETWORTH_COMMITTEE_KEY = "bizpilot_committees_v1";
 
+// ==========================================
+// FORMAT HELPERS
+// ==========================================
 
-// Safely read records from localStorage
-function netWorthReadStorage(key) {
-    try {
-        const data = JSON.parse(localStorage.getItem(key));
-        return Array.isArray(data) ? data : [];
-    } catch (error) {
-        console.error("Could not read storage:", key, error);
-        return [];
-    }
-}
-
-
-// Format money
 function netWorthMoney(value) {
     return "₹" + Number(value || 0).toLocaleString("en-IN", {
         minimumFractionDigits: 2,
@@ -29,7 +17,6 @@ function netWorthMoney(value) {
 }
 
 
-// Format weight
 function netWorthWeight(value) {
     return Number(value || 0).toLocaleString("en-IN", {
         minimumFractionDigits: 0,
@@ -38,7 +25,6 @@ function netWorthWeight(value) {
 }
 
 
-// Current month in YYYY-MM format
 function netWorthCurrentMonth() {
     const now = new Date();
 
@@ -51,13 +37,11 @@ function netWorthCurrentMonth() {
 // INVENTORY WEIGHT
 // ==========================================
 
-function netWorthGetInventoryWeight() {
-    const inventory = netWorthReadStorage(NETWORTH_INVENTORY_KEY);
-
+function netWorthGetInventoryWeight(inventory) {
     return inventory.reduce((total, item) => {
         return total + Math.max(
             0,
-            Number(item.weightGrams) || 0
+            Number(item.weight_grams) || 0
         );
     }, 0);
 }
@@ -67,13 +51,11 @@ function netWorthGetInventoryWeight() {
 // JAMA AND UDHAR
 // ==========================================
 
-function netWorthGetJamaUdhaar() {
-    const records = netWorthReadStorage(NETWORTH_JAMA_KEY);
-
+function netWorthGetJamaUdhaar(records) {
     return records.reduce((totals, record) => {
         const remaining = Math.max(
             0,
-            Number(record.remainingAmount) || 0
+            Number(record.remaining_amount) || 0
         );
 
         if (record.type === "jama") {
@@ -96,27 +78,35 @@ function netWorthGetJamaUdhaar() {
 // COMMITTEE CALCULATIONS
 // ==========================================
 
-function netWorthGetCommitteeDetails() {
-    const committees = netWorthReadStorage(NETWORTH_COMMITTEE_KEY);
-
+function netWorthGetCommitteeDetails(
+    committees,
+    members,
+    payments
+) {
     const currentMonth = netWorthCurrentMonth();
 
     let monthlyExpected = 0;
     let monthlyReceived = 0;
-    let monthlyReceivable = 0;
     let unusedPayouts = 0;
 
-    committees.forEach(committee => {
+    // Only ongoing committees are included.
+    const ongoingCommittees = committees.filter(
+        committee => committee.status === "ongoing"
+    );
 
-        // Only ongoing committees are included
-        if (committee.status !== "ongoing") {
-            return;
-        }
+    const ongoingCommitteeIds = new Set(
+        ongoingCommittees.map(committee => committee.id)
+    );
 
-        const startMonth = String(committee.startDate || "").slice(0, 7);
-        const endMonth = String(committee.endDate || "").slice(0, 7);
+    ongoingCommittees.forEach(committee => {
+        const startMonth = String(
+            committee.start_date || ""
+        ).slice(0, 7);
 
-        // Count monthly contributions only during the committee period
+        const endMonth = String(
+            committee.end_date || ""
+        ).slice(0, 7);
+
         const isCurrentMonthActive =
             startMonth &&
             endMonth &&
@@ -124,17 +114,19 @@ function netWorthGetCommitteeDetails() {
             currentMonth <= endMonth;
 
         if (isCurrentMonthActive) {
-
-            // Expected contribution from all committee members
             const expectedForCommittee =
-                Number(committee.memberCount || 0) *
-                Number(committee.monthlyAmount || 0);
+                Number(committee.member_count || 0) *
+                Number(committee.monthly_amount || 0);
 
             monthlyExpected += expectedForCommittee;
 
-            // Count contributions already paid this month
-            (committee.payments || []).forEach(payment => {
-                if (String(payment.month) === currentMonth) {
+            // Payments belonging to this committee
+            // and the current month.
+            payments.forEach(payment => {
+                if (
+                    payment.committee_id === committee.id &&
+                    String(payment.month) === currentMonth
+                ) {
                     monthlyReceived += Math.max(
                         0,
                         Number(payment.amount) || 0
@@ -142,20 +134,25 @@ function netWorthGetCommitteeDetails() {
                 }
             });
         }
-
-        // Unused payouts are money owed to committee winners
-        (committee.members || []).forEach(member => {
-            unusedPayouts += Math.max(
-                0,
-                Number(member.payoutRemaining) || 0
-            );
-        });
     });
 
-    // Do not allow received amount to exceed expected amount
-    monthlyReceived = Math.min(monthlyReceived, monthlyExpected);
+    // Unused payouts are liabilities owed to winners.
+    members.forEach(member => {
+        if (ongoingCommitteeIds.has(member.committee_id)) {
+            unusedPayouts += Math.max(
+                0,
+                Number(member.payout_remaining) || 0
+            );
+        }
+    });
 
-    monthlyReceivable = Math.max(
+    // Do not allow received amount to exceed expected amount.
+    monthlyReceived = Math.min(
+        monthlyReceived,
+        monthlyExpected
+    );
+
+    const monthlyReceivable = Math.max(
         0,
         monthlyExpected - monthlyReceived
     );
@@ -175,14 +172,9 @@ function netWorthGetCommitteeDetails() {
 
 function netWorthGetCashBank() {
     if (typeof getCashBalances !== "function") {
-        console.error(
+        throw new Error(
             "getCashBalances() was not found. Check cash.js loading order."
         );
-
-        return {
-            cash: 0,
-            bank: 0
-        };
     }
 
     const balances = getCashBalances() || {};
@@ -208,15 +200,65 @@ function netWorthGetCashBank() {
 
 
 // ==========================================
-// COMPLETE NET WORTH
+// FETCH DATA AND CALCULATE NET WORTH
 // ==========================================
 
-function calculateNetWorth() {
-    const inventoryWeight = netWorthGetInventoryWeight();
-    const cashBank = netWorthGetCashBank();
-    const jamaUdhaar = netWorthGetJamaUdhaar();
-    const committee = netWorthGetCommitteeDetails();
+async function calculateNetWorth() {
 
+    const [
+        inventoryResult,
+        jamaResult,
+        committeesResult,
+        membersResult,
+        paymentsResult
+    ] = await Promise.all([
+        VasundharaDB.select("inventory"),
+        VasundharaDB.select("jama_udhar"),
+        VasundharaDB.select("committees"),
+        VasundharaDB.select("committee_members"),
+        VasundharaDB.select("committee_payments")
+    ]);
+
+    // Stop if any database query fails.
+    const results = [
+        inventoryResult,
+        jamaResult,
+        committeesResult,
+        membersResult,
+        paymentsResult
+    ];
+
+    const failedResult = results.find(
+        result => result.error
+    );
+
+    if (failedResult) {
+        throw failedResult.error;
+    }
+
+    const inventory = inventoryResult.data || [];
+    const jamaRecords = jamaResult.data || [];
+    const committees = committeesResult.data || [];
+    const members = membersResult.data || [];
+    const payments = paymentsResult.data || [];
+
+    // Calculate individual totals.
+    const inventoryWeight =
+        netWorthGetInventoryWeight(inventory);
+
+    const jamaUdhaar =
+        netWorthGetJamaUdhaar(jamaRecords);
+
+    const committee =
+        netWorthGetCommitteeDetails(
+            committees,
+            members,
+            payments
+        );
+
+    const cashBank = netWorthGetCashBank();
+
+    // Original net-worth formula.
     const netWorth =
         cashBank.cash +
         cashBank.bank +
@@ -248,17 +290,11 @@ function calculateNetWorth() {
 // RENDER NET WORTH PAGE
 // ==========================================
 
-function renderNetWorthPage() {
-    const main = document.querySelector("main");
+async function renderNetWorthPage() {
 
-    if (!main) {
-        console.error("Main content container not found.");
-        return;
-    }
+    const data = await calculateNetWorth();
 
-    const data = calculateNetWorth();
-
-    main.innerHTML = `
+    return `
         <div class="networth-page">
 
             <div class="panel">
@@ -273,7 +309,7 @@ function renderNetWorthPage() {
                     <button
                         type="button"
                         class="small-button"
-                        onclick="renderNetWorthPage()"
+                        onclick="location.reload()"
                     >
                         ↻ Refresh
                     </button>

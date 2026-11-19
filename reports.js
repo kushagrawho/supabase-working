@@ -1,21 +1,7 @@
 
 // ==========================================
-// PROFIT VS EXPENSE REPORT
-//
-// 1. Revenue vs Effective Money Out:
-//    Full invoice revenue minus:
-//    Business Expense + House Expense + Loss
-//
-// 2. Sales Profit Comparison:
-//    Total invoice profit minus:
-//    House Expense + Loss
-//
-// Internal transfers, advance refunds and other
-// outgoing categories are excluded.
+// PROFIT VS EXPENSE REPORT — SUPABASE
 // ==========================================
-
-const PE_SALES_KEY = "bizpilot_sales_v1";
-const PE_CASH_KEY = "bizpilot_cash_bank_v1";
 
 // Only these categories count as effective Money Out.
 const PE_EFFECTIVE_EXPENSES = [
@@ -29,15 +15,6 @@ const PE_PROFIT_EXPENSES = [
     "house_expense",
     "loss"
 ];
-
-function peReadRecords(key) {
-    try {
-        const records = JSON.parse(localStorage.getItem(key));
-        return Array.isArray(records) ? records : [];
-    } catch (error) {
-        return [];
-    }
-}
 
 function peEscape(value) {
     return String(value ?? "").replace(/[&<>"']/g, character => ({
@@ -57,14 +34,13 @@ function peMoney(value) {
 }
 
 function peGetInvoiceAmount(sale) {
-    const amount =
+    return Number(
+        sale.final_amount ??
         sale.finalAmount ??
         sale.totalAmount ??
-        sale.final_amount ??
         sale.amount ??
-        0;
-
-    return Number(amount) || 0;
+        0
+    ) || 0;
 }
 
 function peToday() {
@@ -113,10 +89,39 @@ function peExpenseLabel(purpose) {
     return labels[purpose] || purpose || "Other";
 }
 
-// Calculate all report values for the selected date range.
-function peCalculateReport(fromDate, toDate) {
-    const allSales = peReadRecords(PE_SALES_KEY);
-    const allCashRecords = peReadRecords(PE_CASH_KEY);
+// ==========================================
+// LOAD AND CALCULATE REPORT FROM SUPABASE
+// ==========================================
+
+async function peCalculateReport(fromDate, toDate) {
+
+    const [
+        { data: salesData, error: salesError },
+        { data: cashData, error: cashError }
+    ] = await Promise.all([
+        VasundharaDB.select("sales"),
+        VasundharaDB.select("cash_bank_transactions")
+    ]);
+
+    if (salesError) throw salesError;
+    if (cashError) throw cashError;
+
+    const allSales = (salesData || []).map(sale => ({
+        ...sale,
+        invoiceNumber: sale.invoice_number || "",
+        customerName: sale.customer_name || "",
+        finalAmount: Number(sale.final_amount) || 0,
+        profit: Number(sale.profit) || 0
+    }));
+
+    const allCashRecords = (cashData || []).map(record => ({
+        ...record,
+        amount: Number(record.amount) || 0,
+        account: record.account,
+        direction: record.direction,
+        purpose: record.purpose,
+        details: record.details || ""
+    }));
 
     const matchingSales = allSales.filter(sale =>
         sale.date &&
@@ -161,10 +166,8 @@ function peCalculateReport(fromDate, toDate) {
         0
     );
 
-    // Revenue comparison.
     const revenueDifference = totalRevenue - totalExpenses;
 
-    // Sales profit comparison.
     const profitAfterHouseAndLoss = totalProfit - totalHouseAndLoss;
 
     return {
@@ -180,12 +183,16 @@ function peCalculateReport(fromDate, toDate) {
     };
 }
 
-// Display the Profit vs Expenses page.
-function renderProfitExpensePage(fromDate, toDate) {
+// ==========================================
+// DISPLAY PROFIT VS EXPENSE PAGE
+// ==========================================
+
+async function renderProfitExpensePage(fromDate, toDate) {
+
     const from = fromDate || peFirstDayOfMonth();
     const to = toDate || peToday();
 
-    const report = peCalculateReport(from, to);
+    const report = await peCalculateReport(from, to);
 
     const revenueLabel = report.revenueDifference >= 0
         ? "Revenue remaining after effective Money Out"
@@ -252,6 +259,7 @@ function renderProfitExpensePage(fromDate, toDate) {
 
     report.expenses.forEach(record => {
         const label = peExpenseLabel(record.purpose);
+
         categoryTotals[label] =
             (categoryTotals[label] || 0) + Number(record.amount || 0);
     });
@@ -299,7 +307,6 @@ function renderProfitExpensePage(fromDate, toDate) {
             </div>
         </div>
 
-        <!-- Two independent comparisons side by side. -->
         <div style="
             display:grid;
             grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));
@@ -307,7 +314,6 @@ function renderProfitExpensePage(fromDate, toDate) {
             align-items:start;
         ">
 
-            <!-- LEFT: Revenue vs effective Money Out -->
             <div class="panel">
                 <h3>Revenue vs Effective Money Out</h3>
                 <div class="panel-sub">
@@ -366,7 +372,6 @@ function renderProfitExpensePage(fromDate, toDate) {
                 </p>
             </div>
 
-            <!-- RIGHT: Sales profit and house/loss comparison -->
             <div>
                 <div class="panel">
                     <h3>Total Sales Profit</h3>
@@ -514,8 +519,11 @@ function renderProfitExpensePage(fromDate, toDate) {
     `;
 }
 
-// Apply the selected date range.
-document.addEventListener("click", function(event) {
+// ==========================================
+// APPLY DATE RANGE
+// ==========================================
+
+document.addEventListener("click", async function(event) {
     if (event.target.id !== "peApplyBtn") return;
 
     const from = document.getElementById("peFromDate").value;
@@ -531,12 +539,22 @@ document.addEventListener("click", function(event) {
         return;
     }
 
-    document.getElementById("pageContent").innerHTML =
-        renderProfitExpensePage(from, to);
+    const pageContent = document.getElementById("pageContent");
+
+    try {
+        pageContent.innerHTML = "<div class='panel'>Loading report...</div>";
+        pageContent.innerHTML = await renderProfitExpensePage(from, to);
+    } catch (error) {
+        console.error("Profit vs Expense report error:", error);
+        toast("Unable to load the report. Please try again.");
+    }
 });
 
-// Export the selected report.
-document.addEventListener("click", function(event) {
+// ==========================================
+// EXPORT REPORT CSV
+// ==========================================
+
+document.addEventListener("click", async function(event) {
     if (event.target.id !== "peExportBtn") return;
 
     const from = document.getElementById("peFromDate").value;
@@ -547,62 +565,68 @@ document.addEventListener("click", function(event) {
         return;
     }
 
-    const report = peCalculateReport(from, to);
+    try {
+        const report = await peCalculateReport(from, to);
 
-    const rows = [
-        ["Report", "Revenue vs Effective Money Out"],
-        ["From date", from],
-        ["To date", to],
-        [],
-        ["Main comparison"],
-        ["Total invoice revenue", report.totalRevenue],
-        ["Total effective Money Out", report.totalExpenses],
-        ["Revenue minus effective Money Out", report.revenueDifference],
-        [],
-        ["Separate sales profit comparison"],
-        ["Total sales profit", report.totalProfit],
-        ["House Expense + Loss", report.totalHouseAndLoss],
-        ["Profit after House Expense + Loss", report.profitAfterHouseAndLoss],
-        [],
-        ["Sales invoice details"],
-        ["Date", "Invoice", "Customer", "Invoice amount", "Profit"],
-        ...report.sales.map(sale => [
-            sale.date,
-            sale.invoiceNumber || "",
-            sale.customerName || "",
-            peGetInvoiceAmount(sale),
-            Number(sale.profit) || 0
-        ]),
-        [],
-        ["Effective Money Out details"],
-        ["Date", "Account", "Category", "Description", "Amount"],
-        ...report.expenses.map(record => [
-            record.date,
-            record.account === "cash" ? "Cash" : "UPI / Bank",
-            peExpenseLabel(record.purpose),
-            record.details || "",
-            Number(record.amount) || 0
-        ])
-    ];
+        const rows = [
+            ["Report", "Revenue vs Effective Money Out"],
+            ["From date", from],
+            ["To date", to],
+            [],
+            ["Main comparison"],
+            ["Total invoice revenue", report.totalRevenue],
+            ["Total effective Money Out", report.totalExpenses],
+            ["Revenue minus effective Money Out", report.revenueDifference],
+            [],
+            ["Separate sales profit comparison"],
+            ["Total sales profit", report.totalProfit],
+            ["House Expense + Loss", report.totalHouseAndLoss],
+            ["Profit after House Expense + Loss", report.profitAfterHouseAndLoss],
+            [],
+            ["Sales invoice details"],
+            ["Date", "Invoice", "Customer", "Invoice amount", "Profit"],
+            ...report.sales.map(sale => [
+                sale.date,
+                sale.invoiceNumber || "",
+                sale.customerName || "",
+                peGetInvoiceAmount(sale),
+                Number(sale.profit) || 0
+            ]),
+            [],
+            ["Effective Money Out details"],
+            ["Date", "Account", "Category", "Description", "Amount"],
+            ...report.expenses.map(record => [
+                record.date,
+                record.account === "cash" ? "Cash" : "UPI / Bank",
+                peExpenseLabel(record.purpose),
+                record.details || "",
+                Number(record.amount) || 0
+            ])
+        ];
 
-    const csv = rows.map(row =>
-        row.map(value =>
-            `"${String(value ?? "").replace(/"/g, '""')}"`
-        ).join(",")
-    ).join("\n");
+        const csv = rows.map(row =>
+            row.map(value =>
+                `"${String(value ?? "").replace(/"/g, '""')}"`
+            ).join(",")
+        ).join("\n");
 
-    const blob = new Blob([csv], {
-        type: "text/csv;charset=utf-8;"
-    });
+        const blob = new Blob([csv], {
+            type: "text/csv;charset=utf-8;"
+        });
 
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
 
-    link.href = url;
-    link.download = `revenue-vs-money-out-${from}-to-${to}.csv`;
-    link.click();
+        link.href = url;
+        link.download = `revenue-vs-money-out-${from}-to-${to}.csv`;
+        link.click();
 
-    URL.revokeObjectURL(url);
+        URL.revokeObjectURL(url);
 
-    toast("Report exported.");
+        toast("Report exported.");
+
+    } catch (error) {
+        console.error("Report export error:", error);
+        toast("Unable to export the report. Please try again.");
+    }
 });

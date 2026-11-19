@@ -98,6 +98,9 @@
                 }
 
                 hideLogin();
+                if (typeof render === "function") {
+    render("overview");
+}
 
             } catch (error) {
                 console.error("Login failed:", error);
@@ -110,40 +113,106 @@
             }
         });
 
-    // Check whether a valid session already exists.
-    async function checkExistingSession() {
-        showLogin();
+    
+    
+    // ==========================================
+    // 5-MINUTE INACTIVITY AUTO LOGOUT
+    // ==========================================
 
-        try {
-            const { data, error } = await supabase.auth.getSession();
+    const INACTIVITY_LIMIT = 5 * 60 * 1000;
+    let inactivityTimer = null;
 
-            if (error) {
-                throw error;
-            }
-
-            if (data.session) {
-                hideLogin();
-            } else {
-                showLogin();
-            }
-
-        } catch (error) {
-            console.error("Session check failed:", error);
-            showLogin();
+    function stopInactivityTimer() {
+        if (inactivityTimer) {
+            clearTimeout(inactivityTimer);
+            inactivityTimer = null;
         }
     }
 
-    // React to login, logout and session changes.
-    supabase.auth.onAuthStateChange((event, session) => {
-        if (session) {
-            hideLogin();
-        } else {
-            showLogin();
+    function resetInactivityTimer() {
+        stopInactivityTimer();
+
+        if (document.body.classList.contains("auth-locked")) {
+            return;
         }
+
+        inactivityTimer = setTimeout(async function () {
+            console.log("Session expired due to inactivity.");
+
+            const { error } = await supabase.auth.signOut();
+
+            if (error) {
+                console.error("Automatic logout failed:", error);
+                showLogin();
+            }
+        }, INACTIVITY_LIMIT);
+    }
+
+    const activityEvents = [
+        "mousedown",
+        "mousemove",
+        "keydown",
+        "scroll",
+        "touchstart",
+        "click"
+    ];
+
+    activityEvents.forEach(function (eventName) {
+        document.addEventListener(eventName, resetInactivityTimer);
     });
 
-    // Start authentication check.
-    checkExistingSession();
+    // Start or stop the timer when authentication changes.
+    supabase.auth.onAuthStateChange((event, session) => {
+    if (session) {
+        hideLogin();
+        resetInactivityTimer();
+    } else {
+        showLogin();
+        stopInactivityTimer();
+    }
+});
+
+    // Check whether a valid session already exists.
+    
+async function checkExistingSession() {
+    showLogin();
+
+    try {
+        const { data, error } = await supabase.auth.getSession();
+
+        if (error) {
+            throw error;
+        }
+
+        if (data.session) {
+            hideLogin();
+            return true;
+        } else {
+            showLogin();
+            return false;
+        }
+
+    } catch (error) {
+        console.error("Session check failed:", error);
+        showLogin();
+        return false;
+    }
+}
+
+
+    // React to login, logout and session changes.
+   supabase.auth.onAuthStateChange((event, session) => {
+    if (session) {
+        hideLogin();
+        resetInactivityTimer();
+    } else {
+        showLogin();
+        stopInactivityTimer();
+    }
+});
+
+ // Start authentication check and expose its result.
+window.vasundharaAuthReady = checkExistingSession();
 
 // ==========================================
 // LOGOUT

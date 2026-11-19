@@ -732,8 +732,9 @@
 
 
 
+
 /* ==========================================
-   VASUNDHARA LOGIN SCREEN
+   VASUNDHARA — PREMIUM CORPORATE LOGIN
 ========================================== */
 
 #vasundharaLoginScreen {
@@ -743,102 +744,216 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
-    background: #f4f6f8;
+    padding: 24px;
+    overflow: hidden;
+    isolation: isolate;
+    background:
+        radial-gradient(ellipse at 75% 35%, rgba(25, 75, 105, .38), transparent 48%),
+        linear-gradient(120deg, #050b14 0%, #101d2d 55%, #07101c 100%);
 }
 
+/* Architectural skyline */
+#vasundharaLoginScreen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -2;
+    opacity: .9;
+    background:
+        /* distant building windows */
+        repeating-linear-gradient(
+            90deg,
+            transparent 0 19px,
+            rgba(100, 180, 220, .22) 20px 22px,
+            transparent 23px 34px
+        ),
+        repeating-linear-gradient(
+            0deg,
+            transparent 0 24px,
+            rgba(100, 180, 220, .20) 25px 27px,
+            transparent 28px 39px
+        );
+    mask-image: linear-gradient(
+        to top,
+        transparent 0%,
+        black 12%,
+        black 85%,
+        transparent 100%
+    );
+    transform: perspective(700px) rotateY(-8deg) scale(1.12);
+    animation: cityDrift 24s ease-in-out infinite alternate;
+}
+
+/* Moving atmospheric light */
+#vasundharaLoginScreen::after {
+    content: "";
+    position: absolute;
+    inset: -30%;
+    z-index: -1;
+    pointer-events: none;
+    background:
+        linear-gradient(
+            110deg,
+            transparent 35%,
+            rgba(68, 160, 210, .08) 48%,
+            rgba(218, 180, 105, .12) 52%,
+            transparent 65%
+        );
+    animation: cityLight 12s ease-in-out infinite alternate;
+}
+
+@keyframes cityDrift {
+    from { transform: perspective(700px) rotateY(-8deg) scale(1.12) translateX(-8px); }
+    to { transform: perspective(700px) rotateY(-5deg) scale(1.16) translateX(8px); }
+}
+
+@keyframes cityLight {
+    from { transform: translateX(-12%) translateY(2%); }
+    to { transform: translateX(12%) translateY(-2%); }
+}
+
+/* Login glass panel */
 .login-card {
+    position: relative;
     width: 100%;
-    max-width: 420px;
-    padding: 36px;
-    background: #ffffff;
-    border-radius: 16px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+    max-width: 430px;
+    padding: 42px 38px;
+    border: 1px solid rgba(255, 255, 255, .13);
+    border-radius: 20px;
+    background: rgba(10, 20, 33, .82);
+    backdrop-filter: blur(22px);
+    -webkit-backdrop-filter: blur(22px);
+    box-shadow:
+        0 30px 90px rgba(0, 0, 0, .55),
+        inset 0 1px 0 rgba(255, 255, 255, .08);
+    animation: loginAppear .7s ease both;
+}
+
+@keyframes loginAppear {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .login-brand {
-    font-size: 25px;
+    font-size: 30px;
     font-weight: 800;
-    color: #245c45;
-    margin-bottom: 24px;
+    letter-spacing: 1.5px;
+    color: #e4c27b;
+    margin-bottom: 30px;
+    text-shadow: 0 0 25px rgba(228, 194, 123, .18);
 }
 
 .login-card h2 {
-    margin: 0 0 8px;
-    font-size: 25px;
-    color: #1f2937;
+    margin: 0 0 9px;
+    font-size: 28px;
+    color: #f5f7fa;
+    letter-spacing: -.5px;
 }
 
 .login-subtitle {
-    margin: 0 0 26px;
-    color: #6b7280;
+    margin: 0 0 30px;
+    color: #aab7c7;
     font-size: 14px;
+    line-height: 1.6;
 }
 
 .login-card label {
     display: block;
-    margin: 16px 0 7px;
-    font-size: 14px;
+    margin: 18px 0 8px;
+    font-size: 13px;
     font-weight: 600;
-    color: #374151;
+    color: #d5deea;
 }
 
 .login-card input {
     width: 100%;
     box-sizing: border-box;
-    padding: 13px 14px;
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
+    padding: 14px 15px;
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, .055);
+    color: #ffffff;
     font-size: 15px;
     outline: none;
+    transition: border-color .25s, box-shadow .25s, background .25s;
+}
+
+.login-card input::placeholder {
+    color: #8291a4;
 }
 
 .login-card input:focus {
-    border-color: #245c45;
-    box-shadow: 0 0 0 3px rgba(36, 92, 69, 0.1);
+    border-color: #d5ad62;
+    background: rgba(255, 255, 255, .085);
+    box-shadow: 0 0 0 3px rgba(213, 173, 98, .12);
 }
 
 #loginButton {
     width: 100%;
-    margin-top: 22px;
-    padding: 14px;
+    margin-top: 25px;
+    padding: 15px;
     border: none;
-    border-radius: 8px;
-    background: #245c45;
-    color: white;
+    border-radius: 10px;
+    background: linear-gradient(110deg, #b98c43, #e4c27b, #b98c43);
+    color: #111b29;
     font-size: 15px;
-    font-weight: 700;
+    font-weight: 800;
+    letter-spacing: .4px;
     cursor: pointer;
+    transition: transform .25s, box-shadow .25s, filter .25s;
 }
 
 #loginButton:hover {
-    background: #194532;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(210, 170, 95, .25);
+    filter: brightness(1.08);
 }
 
 #loginButton:disabled {
-    opacity: 0.65;
+    opacity: .65;
     cursor: not-allowed;
+    transform: none;
 }
 
 .login-error {
-    color: #dc2626;
+    color: #ff8585;
     font-size: 13px;
     min-height: 18px;
     margin: 10px 0 0;
 }
 
 .login-footer {
-    margin: 22px 0 0;
+    margin: 26px 0 0;
+    padding-top: 18px;
+    border-top: 1px solid rgba(255, 255, 255, .09);
     text-align: center;
-    color: #9ca3af;
+    color: #8291a4;
     font-size: 12px;
+    letter-spacing: .5px;
 }
 
 @media (max-width: 480px) {
+    #vasundharaLoginScreen {
+        padding: 18px;
+    }
+
     .login-card {
-        padding: 26px 22px;
+        padding: 32px 24px;
+    }
+
+    .login-brand {
+        font-size: 27px;
     }
 }
+
+@media (prefers-reduced-motion: reduce) {
+    #vasundharaLoginScreen::before,
+    #vasundharaLoginScreen::after,
+    .login-card {
+        animation: none;
+    }
+}
+
 
 
 /* Hide the entire application while authentication is required */
@@ -846,3 +961,238 @@ body.auth-locked > *:not(#vasundharaLoginScreen) {
     visibility: hidden !important;
     pointer-events: none !important;
 }
+
+
+/* =====================================
+   VASUNDHARA BUSINESS OVERVIEW
+===================================== */
+
+.ov-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.ov-dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.ov-dashboard-header h2 {
+    margin: 0 0 5px;
+    font-size: 22px;
+}
+
+.ov-period-control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 170px;
+}
+
+.ov-period-control label,
+.ov-custom-dates label {
+    font-size: 12px;
+    color: var(--muted, #777);
+}
+
+.ov-period-control select {
+    min-width: 170px;
+}
+
+.ov-custom-dates {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.ov-custom-dates label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ov-custom-dates input {
+    padding: 10px;
+    border: 1px solid var(--border, #ddd);
+    border-radius: 8px;
+    background: var(--surface, #fff);
+    color: inherit;
+}
+
+.ov-section-heading {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.ov-section-heading h3 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.ov-section-heading > span {
+    color: var(--muted, #777);
+    font-size: 12px;
+}
+
+.ov-stats-grid {
+    margin-top: -8px;
+}
+
+.ov-panel {
+    min-width: 0;
+}
+
+.ov-trend-legend {
+    display: flex;
+    gap: 18px;
+    margin: 18px 0 10px;
+    font-size: 12px;
+    color: var(--muted, #777);
+}
+
+.ov-trend-legend span {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.ov-trend-legend i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+}
+
+.ov-trend-legend .revenue-dot {
+    background: #4787d7;
+}
+
+.ov-trend-legend .profit-dot {
+    background: #22a477;
+}
+
+.ov-trend-chart {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 12px;
+    height: 190px;
+    padding: 15px 5px 0;
+    border-bottom: 1px solid var(--border, #e5e7eb);
+}
+
+.ov-trend-column {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 0;
+    height: 100%;
+    gap: 8px;
+}
+
+.ov-trend-bars {
+    display: flex;
+    align-items: end;
+    justify-content: center;
+    gap: 5px;
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+}
+
+.ov-trend-bar {
+    width: min(24px, 38%);
+    min-height: 2px;
+    border-radius: 5px 5px 0 0;
+}
+
+.ov-trend-bar.revenue {
+    background: #4787d7;
+}
+
+.ov-trend-bar.profit {
+    background: #22a477;
+}
+
+.ov-trend-column > span {
+    font-size: 11px;
+    color: var(--muted, #777);
+    padding-bottom: 8px;
+}
+
+.ov-balance-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.ov-balance-card {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+}
+
+.ov-balance-card > span {
+    font-size: 13px;
+    color: var(--muted, #777);
+}
+
+.ov-balance-card > strong {
+    font-size: 23px;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+}
+
+.ov-balance-card > small {
+    color: var(--muted, #777);
+    font-size: 11px;
+}
+
+.ov-balance-card.highlight {
+    border-color: #7bb99c;
+    background: var(--surface, #fff);
+}
+
+.ov-dashboard-footer {
+    padding: 8px 0;
+    color: var(--muted, #777);
+    font-size: 11px;
+}
+
+@media (max-width: 650px) {
+    .ov-dashboard-header {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .ov-period-control,
+    .ov-period-control select {
+        width: 100%;
+    }
+
+    .ov-balance-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .ov-trend-chart {
+        gap: 5px;
+        height: 160px;
+    }
+
+    .ov-trend-bars {
+        gap: 3px;
+    }
+
+    .ov-balance-card > strong {
+        font-size: 20px;
+    }
+}
+
