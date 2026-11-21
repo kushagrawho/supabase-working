@@ -324,7 +324,7 @@ salesCustomerCache = (customersData || []).map(customer => ({
   );
 
   const rows = sales.length
-    ? sales.map(sale => {
+      ? sales.map((sale, index) => {
         const items = salesGetItems(sale);
 
         const itemHTML = items.map(item => `
@@ -359,7 +359,8 @@ salesCustomerCache = (customersData || []).map(customer => ({
         ].filter(Boolean).join("<br>");
 
         return `
-          <tr data-sales-row>
+          <tr data-sales-row data-sales-index="${index}"
+    style="${index >= 10 ? "display:none;" : ""}">
 
             <td>
               <strong>${escapeSalesHTML(sale.invoiceNumber)}</strong>
@@ -492,6 +493,24 @@ salesCustomerCache = (customersData || []).map(customer => ({
 
         </table>
 
+      </div>
+
+            <div id="salesPagination" class="module-toolbar">
+        <span id="salesRangeInfo" class="panel-sub">
+          Showing 1–${Math.min(10, sales.length)} of ${sales.length}
+        </span>
+        <div>
+          <button type="button" class="muted-link" id="salesPrev" disabled>
+            Previous
+          </button>
+          <span id="salesPageInfo" class="panel-sub">
+            Page 1 of ${Math.max(1, Math.ceil(sales.length / 10))}
+          </span>
+          <button type="button" class="muted-link" id="salesNext"
+            ${sales.length <= 10 ? "disabled" : ""}>
+            Next
+          </button>
+        </div>
       </div>
 
     </div>
@@ -1477,21 +1496,81 @@ document.addEventListener("submit", async function(event) {
 // 21. SEARCH SALES
 // ==========================================
 
-document.addEventListener("input", function(event) {
+// ==========================================
+// 21. SEARCH SALES AND PAGINATION
+// ==========================================
 
-  if (event.target.id !== "salesSearch") return;
+let salesCurrentPage = 1;
 
-  const searchText = event.target.value.toLowerCase();
+function updateSalesPagination() {
+  const rows = Array.from(
+    document.querySelectorAll("#salesTableBody [data-sales-row]")
+  );
 
-  document.querySelectorAll("[data-sales-row]").forEach(row => {
+  const searchText = (
+    document.getElementById("salesSearch")?.value || ""
+  ).trim().toLowerCase();
 
-    row.style.display =
-      row.textContent.toLowerCase().includes(searchText)
-        ? ""
-        : "none";
+  const filteredRows = rows.filter(row =>
+    row.textContent.toLowerCase().includes(searchText)
+  );
 
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  salesCurrentPage = Math.min(salesCurrentPage, totalPages);
+
+  const start = (salesCurrentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, filteredRows.length);
+
+  rows.forEach(row => {
+    row.style.display = "none";
   });
 
+  filteredRows.slice(start, end).forEach(row => {
+    row.style.display = "";
+  });
+
+  const rangeInfo = document.getElementById("salesRangeInfo");
+  if (rangeInfo) {
+    rangeInfo.textContent = filteredRows.length
+      ? `Showing ${start + 1}–${end} of ${filteredRows.length}`
+      : "No matching invoices";
+  }
+
+  const pageInfo = document.getElementById("salesPageInfo");
+  if (pageInfo) {
+    pageInfo.textContent = `Page ${salesCurrentPage} of ${totalPages}`;
+  }
+
+  const prevButton = document.getElementById("salesPrev");
+  if (prevButton) {
+    prevButton.disabled = salesCurrentPage <= 1;
+  }
+
+  const nextButton = document.getElementById("salesNext");
+  if (nextButton) {
+    nextButton.disabled = salesCurrentPage >= totalPages;
+  }
+}
+
+document.addEventListener("input", function(event) {
+  if (event.target.id !== "salesSearch") return;
+
+  salesCurrentPage = 1;
+  updateSalesPagination();
+});
+
+document.addEventListener("click", function(event) {
+  if (event.target.closest("#salesPrev")) {
+    salesCurrentPage--;
+    updateSalesPagination();
+  }
+
+  if (event.target.closest("#salesNext")) {
+    salesCurrentPage++;
+    updateSalesPagination();
+  }
 });
 
 

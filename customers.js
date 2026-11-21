@@ -155,22 +155,23 @@ async function renderCustomersPage() {
       `;
 
   const customerRows = customerSummaries.length
-    ? customerSummaries.map(customer => `
-        <tr data-customer-row>
-          <td><strong>${escapeCustomerHTML(customer.customerId)}</strong></td>
-          <td>${escapeCustomerHTML(customer.mobile)}</td>
-          <td>${escapeCustomerHTML(customer.name)}</td>
-          <td>${formatDate(customer.lastPurchase)}</td>
-          <td>${formatProfit(customer.profitLastYear)}</td>
-        </tr>
-      `).join("")
-    : `
-        <tr>
-          <td colspan="5" class="empty-note">
-            No customers added yet. Use the form below to add your first customer.
-          </td>
-        </tr>
-      `;
+  ? customerSummaries.map((customer, index) => `
+      <tr data-customer-row data-customer-index="${index}"
+          style="${index >= 10 ? "display:none;" : ""}">
+        <td><strong>${escapeCustomerHTML(customer.customerId)}</strong></td>
+        <td>${escapeCustomerHTML(customer.mobile)}</td>
+        <td>${escapeCustomerHTML(customer.name)}</td>
+        <td>${formatDate(customer.lastPurchase)}</td>
+        <td>${formatProfit(customer.profitLastYear)}</td>
+      </tr>
+    `).join("")
+  : `
+      <tr>
+        <td colspan="5" class="empty-note">
+          No customers added yet. Use the form below to add your first customer.
+        </td>
+      </tr>
+    `;
 
   return `
     <div class="customer-stats">
@@ -210,6 +211,23 @@ async function renderCustomersPage() {
           <tbody>${topRows}</tbody>
         </table>
       </div>
+      <div id="customerPagination" class="module-toolbar">
+  <span id="customerRangeInfo" class="panel-sub">
+    Showing 1–${Math.min(10, customerSummaries.length)} of ${customerSummaries.length}
+  </span>
+  <div>
+    <button type="button" class="muted-link" id="customerPrev" disabled>
+      Previous
+    </button>
+    <span id="customerPageInfo" class="panel-sub">
+      Page 1 of ${Math.max(1, Math.ceil(customerSummaries.length / 10))}
+    </span>
+    <button type="button" class="muted-link" id="customerNext"
+      ${customerSummaries.length <= 10 ? "disabled" : ""}>
+      Next
+    </button>
+  </div>
+</div>
     </div>
 
     <div class="panel">
@@ -358,16 +376,77 @@ document.addEventListener("submit", async function(event) {
 
 
 // Search customers
+let customerCurrentPage = 1;
+
+function updateCustomerPagination() {
+  const rows = Array.from(
+    document.querySelectorAll("#customerTableBody [data-customer-row]")
+  );
+
+  const searchText = (
+    document.getElementById("customerSearch")?.value || ""
+  ).trim().toLowerCase();
+
+  const filteredRows = rows.filter(row =>
+    row.textContent.toLowerCase().includes(searchText)
+  );
+
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+
+  customerCurrentPage = Math.min(customerCurrentPage, totalPages);
+
+  const start = (customerCurrentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, filteredRows.length);
+
+  rows.forEach(row => {
+    row.style.display = "none";
+  });
+
+  filteredRows.slice(start, end).forEach(row => {
+    row.style.display = "";
+  });
+
+  const rangeInfo = document.getElementById("customerRangeInfo");
+  if (rangeInfo) {
+    rangeInfo.textContent = filteredRows.length
+      ? `Showing ${start + 1}–${end} of ${filteredRows.length}`
+      : "No matching customers";
+  }
+
+  const pageInfo = document.getElementById("customerPageInfo");
+  if (pageInfo) {
+    pageInfo.textContent = `Page ${customerCurrentPage} of ${totalPages}`;
+  }
+
+  const prevButton = document.getElementById("customerPrev");
+  if (prevButton) {
+    prevButton.disabled = customerCurrentPage <= 1;
+  }
+
+  const nextButton = document.getElementById("customerNext");
+  if (nextButton) {
+    nextButton.disabled = customerCurrentPage >= totalPages;
+  }
+}
+
 document.addEventListener("input", function(event) {
   if (event.target.id !== "customerSearch") return;
 
-  const searchText = event.target.value.toLowerCase();
+  customerCurrentPage = 1;
+  updateCustomerPagination();
+});
 
-  document.querySelectorAll("[data-customer-row]").forEach(row => {
-    row.style.display = row.textContent.toLowerCase().includes(searchText)
-      ? ""
-      : "none";
-  });
+document.addEventListener("click", function(event) {
+  if (event.target.closest("#customerPrev")) {
+    customerCurrentPage--;
+    updateCustomerPagination();
+  }
+
+  if (event.target.closest("#customerNext")) {
+    customerCurrentPage++;
+    updateCustomerPagination();
+  }
 });
 
 // Export customers to CSV
