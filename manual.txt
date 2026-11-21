@@ -168,13 +168,13 @@ Final release
 
 
 
+{
+    "code": "23514",
+    "details": null,
+    "hint": null,
+    "message": "new row for relation \"cash_bank_transactions\" violates check constraint \"cash_bank_transactions_purpose_check\""
+}
 
-
-# Write your MySQL query statement below
-SELECT MAX(num) AS num
-FROM (
-    SELECT num
-    FROM MyNumbers
-    GROUP BY num
-    HAVING COUNT(num) = 1
-) AS SingleNumbers;
+can be logged from cash , advance jama taken and repayment too , udhar clearace is already there .
+so in jama.js there is option to add entries jama/udhar which makes no sense now as now i can log entries 
+through cash table so remove that form.

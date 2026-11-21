@@ -1,4 +1,3 @@
-
 // ==========================================
 // COMMITTEE MANAGEMENT
 // Type B: Rotating Lottery Committee
@@ -61,45 +60,51 @@ async function loadCommitteesFromSupabase() {
             closedAt: committee.closed_at,
 
             members: committeeMembers.map(member => ({
-                mobile: member.mobile,
-                name: member.name,
-                won: member.won,
-                payoutTotal: Number(member.payout_total),
-                payoutUsed: Number(member.payout_used),
-                payoutRemaining: Number(member.payout_remaining)
-            })),
+    id: member.id,
+    mobile: member.mobile,
+    name: member.name,
+    won: member.won,
+    payoutTotal: Number(member.payout_total),
+    payoutUsed: Number(member.payout_used),
+    payoutRemaining: Number(member.payout_remaining)
+})),
 
             payments: payments
                 .filter(payment => payment.committee_id === committee.id)
                 .map(payment => ({
-                    mobile: payment.mobile,
-                    memberName: payment.member_name,
-                    month: payment.month,
-                    date: payment.date,
-                    amount: Number(payment.amount)
-                })),
-
+    id: payment.id,
+    memberId: payment.member_id,
+    mobile: payment.mobile,
+    memberName: payment.member_name,
+    month: payment.month,
+    date: payment.date,
+    amount: Number(payment.amount)
+})),
             draws: draws
-                .filter(draw => draw.committee_id === committee.id)
-                .map(draw => ({
-                    month: draw.month,
-                    date: draw.date,
-                    winnerMobile: draw.winner_mobile,
-                    winnerName: draw.winner_name,
-                    payoutAmount: Number(draw.payout_amount),
-                    payoutUsed: Number(draw.payout_used),
-                    payoutRemaining: Number(draw.payout_remaining)
-                })),
+    .filter(draw => draw.committee_id === committee.id)
+    .map(draw => ({
+        id: draw.id,
+        month: draw.month,
+        date: draw.date,
+        winnerMobile: draw.winner_mobile,
+        winnerMemberId: draw.winner_member_id,
+        winnerName: draw.winner_name,
+        payoutAmount: Number(draw.payout_amount),
+        payoutUsed: Number(draw.payout_used),
+        payoutRemaining: Number(draw.payout_remaining)
+    })),
 
             usages: usages
                 .filter(usage => usage.committee_id === committee.id)
                 .map(usage => ({
-                    mobile: usage.mobile,
-                    memberName: usage.member_name,
-                    date: usage.date,
-                    amount: Number(usage.amount),
-                    details: usage.details
-                }))
+    id: usage.id,
+    memberId: usage.member_id,
+    mobile: usage.mobile,
+    memberName: usage.member_name,
+    date: usage.date,
+    amount: Number(usage.amount),
+    details: usage.details
+}))
         };
     });
 }
@@ -147,8 +152,8 @@ function committeeNormalizeMobile(value) {
 }
 
 // Unique IDs for every committee and member form.
-function committeeFormSuffix(committeeId, mobile = "") {
-    return String(`${committeeId}-${mobile}`)
+function committeeFormSuffix(committeeId, memberId = "") {
+    return String(`${committeeId}-${memberId}`)
         .replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
@@ -282,14 +287,6 @@ async function addCommitteeMember(committeeId) {
 
     committee.members = committee.members || [];
 
-    const alreadyExists = committee.members.some(member =>
-        committeeNormalizeMobile(member.mobile) === normalizedMobile
-    );
-
-    if (alreadyExists) {
-        alert("This customer is already a member of this committee.");
-        return;
-    }
 
     if (committee.members.length >= Number(committee.memberCount)) {
         alert("This committee already has all its members.");
@@ -318,8 +315,9 @@ async function addCommitteeMember(committeeId) {
 
 // ---------- RECORD MONTHLY PAYMENT ----------
 
-async function recordCommitteePayment(committeeId, mobile) {
-    const suffix = committeeFormSuffix(committeeId, mobile);
+
+async function recordCommitteePayment(committeeId, memberId) {
+    const suffix = committeeFormSuffix(committeeId, memberId);
 
     const date = document.getElementById(
         `committeePaymentDate-${suffix}`
@@ -354,18 +352,12 @@ async function recordCommitteePayment(committeeId, mobile) {
         return;
     }
 
-    committee.members = committee.members || [];
-
-    const targetMobile = committeeNormalizeMobile(mobile);
-
-    const member = committee.members.find(item =>
-        committeeNormalizeMobile(item.mobile) === targetMobile
+    const member = committee.members.find(
+        item => String(item.id) === String(memberId)
     );
 
     if (!member) {
-        alert(
-            "Committee member not found. Please refresh the page and try again."
-        );
+        alert("Membership slot not found. Please refresh the page.");
         return;
     }
 
@@ -377,16 +369,14 @@ async function recordCommitteePayment(committeeId, mobile) {
         return;
     }
 
-    committee.payments = committee.payments || [];
-
     const alreadyPaid = committee.payments.some(payment =>
-        committeeNormalizeMobile(payment.mobile) === targetMobile &&
+        String(payment.memberId) === String(member.id) &&
         payment.month === month
     );
 
     if (alreadyPaid) {
         alert(
-            "A payment is already recorded for this member for the selected month."
+            "A payment is already recorded for this membership slot for the selected month."
         );
         return;
     }
@@ -400,6 +390,7 @@ async function recordCommitteePayment(committeeId, mobile) {
 
     const { error } = await VasundharaDB.insert("committee_payments", {
         committee_id: committee.dbId,
+        member_id: member.id,
         mobile: member.mobile,
         member_name: member.name,
         month,
@@ -418,12 +409,14 @@ async function recordCommitteePayment(committeeId, mobile) {
 }
 
 
+
 // ---------- RECORD MONTHLY WINNER ----------
+
 
 async function recordCommitteeWinner(committeeId) {
     const suffix = committeeFormSuffix(committeeId);
 
-    const winnerMobile = document.getElementById(
+    const winnerMemberId = document.getElementById(
         `committeeWinner-${suffix}`
     )?.value;
 
@@ -438,7 +431,7 @@ async function recordCommitteeWinner(committeeId) {
     );
 
     if (
-        !winnerMobile ||
+        !winnerMemberId ||
         !drawDate ||
         !Number.isFinite(payoutAmount) ||
         payoutAmount <= 0
@@ -480,10 +473,8 @@ async function recordCommitteeWinner(committeeId) {
         return;
     }
 
-    const targetMobile = committeeNormalizeMobile(winnerMobile);
-
     const winner = committee.members.find(member =>
-        committeeNormalizeMobile(member.mobile) === targetMobile
+        String(member.id) === String(winnerMemberId)
     );
 
     if (!winner || winner.won) {
@@ -495,7 +486,7 @@ async function recordCommitteeWinner(committeeId) {
         "record_committee_winner",
         {
             p_committee_id: committee.dbId,
-            p_winner_mobile: winner.mobile,
+            p_winner_member_id: winner.id,
             p_draw_date: drawDate,
             p_payout_amount: payoutAmount
         }
@@ -512,10 +503,12 @@ async function recordCommitteeWinner(committeeId) {
 }
 
 
+
 // ---------- RECORD PAYOUT USAGE ----------
 
-async function recordCommitteePayoutUsage(committeeId, mobile) {
-    const suffix = committeeFormSuffix(committeeId, mobile);
+
+async function recordCommitteePayoutUsage(committeeId, memberId) {
+    const suffix = committeeFormSuffix(committeeId, memberId);
 
     const amount = Number(
         document.getElementById(
@@ -550,10 +543,8 @@ async function recordCommitteePayoutUsage(committeeId, mobile) {
     committee.members = committee.members || [];
     committee.draws = committee.draws || [];
 
-    const targetMobile = committeeNormalizeMobile(mobile);
-
     const member = committee.members.find(item =>
-        committeeNormalizeMobile(item.mobile) === targetMobile
+        String(item.id) === String(memberId)
     );
 
     if (!member || !member.won) {
@@ -572,7 +563,7 @@ async function recordCommitteePayoutUsage(committeeId, mobile) {
         "record_committee_payout_usage",
         {
             p_committee_id: committee.dbId,
-            p_mobile: member.mobile,
+            p_member_id: member.id,
             p_date: date,
             p_amount: amount,
             p_details: details
@@ -588,6 +579,7 @@ async function recordCommitteePayoutUsage(committeeId, mobile) {
     await render("committee");
     alert("Payout usage recorded successfully.");
 }
+
 
 
 // ---------- CLOSE COMMITTEE ----------
@@ -626,10 +618,10 @@ async function closeCommittee(committeeId) {
 
 // ---------- PAYMENT STATUS ----------
 
+
 function committeePaymentStatus(committee, member, month) {
     const payment = (committee.payments || []).find(item =>
-        committeeNormalizeMobile(item.mobile) ===
-            committeeNormalizeMobile(member.mobile) &&
+        String(item.memberId) === String(member.id) &&
         item.month === month
     );
 
@@ -640,6 +632,7 @@ function committeePaymentStatus(committee, member, month) {
 
     return committeeToday() > dueDate ? "Overdue" : "Due";
 }
+
 
 
 // ---------- COMMITTEE MONTHS ----------
@@ -706,9 +699,9 @@ function renderCommitteeDetails(committee) {
 
     const memberCards = committee.members.map(member => {
         const suffix = committeeFormSuffix(
-            committee.id,
-            member.mobile
-        );
+    committee.id,
+    member.id
+);
 
         const paymentRows = months.map(month => {
             const status = committeePaymentStatus(
@@ -717,11 +710,10 @@ function renderCommitteeDetails(committee) {
                 month
             );
 
-            const payment = committee.payments.find(item =>
-                committeeNormalizeMobile(item.mobile) ===
-                    committeeNormalizeMobile(member.mobile) &&
-                item.month === month
-            );
+           const payment = committee.payments.find(item =>
+    String(item.memberId) === String(member.id) &&
+    item.month === month
+);
 
             const statusClass =
                 status === "Paid"
@@ -801,7 +793,7 @@ function renderCommitteeDetails(committee) {
                             >
                         </label>
 
-                        <button onclick="recordCommitteePayment('${committeeEscape(committee.id)}', '${committeeEscape(member.mobile)}')">
+                        <button onclick="recordCommitteePayment('${committeeEscape(committee.id)}', '${committeeEscape(member.id)}')">
                             Record Monthly Payment
                         </button>
                     </div>
@@ -838,7 +830,7 @@ function renderCommitteeDetails(committee) {
                                 >
                             </label>
 
-                            <button onclick="recordCommitteePayoutUsage('${committeeEscape(committee.id)}', '${committeeEscape(member.mobile)}')">
+                            <button onclick="recordCommitteePayoutUsage('${committeeEscape(committee.id)}', '${committeeEscape(member.id)}')">
                                 Record Payout Usage
                             </button>
                         </div>
@@ -953,15 +945,15 @@ function renderCommitteeDetails(committee) {
                         <label>
                             Winner
                             <select id="committeeWinner-${committeeSuffix}">
-                                <option value="">Select member</option>
+    <option value="">Select member</option>
 
-                                ${eligibleMembers.map(member => `
-                                    <option value="${committeeEscape(member.mobile)}">
-                                        ${committeeEscape(member.name)}
-                                        (${committeeEscape(member.mobile)})
-                                    </option>
-                                `).join("")}
-                            </select>
+    ${eligibleMembers.map((member, index) => `
+        <option value="${committeeEscape(member.id)}">
+            Slot ${index + 1} - ${committeeEscape(member.name)}
+            (${committeeEscape(member.mobile)})
+        </option>
+    `).join("")}
+</select>
                         </label>
 
                         <label>

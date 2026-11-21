@@ -178,27 +178,101 @@ async function updateCashCustomerName() {
             document.getElementById("cashCustomerMobile")?.value.trim() === mobile
         ) {
             nameField.value = name || "";
+            if (
+    document.getElementById("cashPurpose")?.value === "jama_advance_repayment"
+) {
+    await loadCashJamaRepayments(mobile);
+}
         }
     } catch (error) {
         console.error("Customer lookup error:", error);
     }
 }
 
+async function loadCashJamaRepayments(mobile) {
+    const select = document.getElementById("cashJamaRepaymentId");
+
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Loading advances...</option>';
+
+    if (!/^[0-9]{10}$/.test(mobile)) {
+        select.innerHTML = '<option value="">Enter a valid customer mobile</option>';
+        return;
+    }
+
+    try {
+        const { data, error } = await VasundharaDB.select("jama_udhar");
+
+        if (error) throw error;
+
+        // Ignore results if the mobile number has changed.
+        if (
+            document.getElementById("cashCustomerMobile")?.value.trim() !== mobile
+        ) {
+            return;
+        }
+
+        const advances = (data || []).filter(record =>
+            record.customer_mobile === mobile &&
+            record.type === "jama" &&
+            Number(record.remaining_amount) > 0
+        );
+
+        select.innerHTML = '<option value="">Select outstanding Jama advance</option>';
+
+        advances.forEach(record => {
+            const option = document.createElement("option");
+            option.value = record.id;
+            option.textContent =
+                `${record.transaction_id} | ${record.date} | Remaining: ₹${Number(record.remaining_amount).toFixed(2)}`;
+
+            select.appendChild(option);
+        });
+
+        if (advances.length === 0) {
+            select.innerHTML =
+                '<option value="">No outstanding Jama advances found</option>';
+        }
+
+    } catch (error) {
+        console.error("Jama advance loading error:", error);
+        select.innerHTML =
+            '<option value="">Unable to load advances</option>';
+    }
+}
+
 function updateCashPurposeFields() {
     const purpose = document.getElementById("cashPurpose").value;
     const customerSection = document.getElementById("cashCustomerSection");
+    const repaymentSection = document.getElementById("cashJamaRepaymentSection");
     const direction = document.getElementById("cashDirection");
 
-    const needsCustomer = purpose === "advance_jama" || purpose === "udhar_clearance";
+    const needsCustomer =
+    purpose === "advance_jama" ||
+    purpose === "udhar_clearance" ||
+    purpose === "jama_advance_repayment" ||
+    purpose === "udhar_given";
 
     customerSection.style.display = needsCustomer ? "block" : "none";
 
-    if (purpose === "advance_jama" || purpose === "udhar_clearance" || purpose === "sales") {
+    if (repaymentSection) {
+        repaymentSection.style.display =
+            purpose === "jama_advance_repayment" ? "block" : "none";
+    }
+
+    if (
+        purpose === "advance_jama" ||
+        purpose === "udhar_clearance" ||
+        purpose === "sales"
+    ) {
         direction.value = "in";
     } else if (
         purpose === "business_expense" ||
         purpose === "house_expense" ||
-        purpose === "loss"
+        purpose === "loss" ||
+        purpose === "jama_advance_repayment" ||
+        purpose === "udhar_given"
     ) {
         direction.value = "out";
     }
@@ -236,18 +310,29 @@ async function addCashTransaction() {
     }
 
     try {
-        const { data, error } = await VasundharaDB.supabase.rpc(
-            "create_cash_transaction",
-            {
-                p_account: account,
-                p_direction: direction,
-                p_amount: amount,
-                p_date: date,
-                p_purpose: purpose,
-                p_customer_mobile: mobile,
-                p_details: details
-            }
-        );
+        const jamaUdharId =
+    purpose === "jama_advance_repayment"
+        ? document.getElementById("cashJamaRepaymentId").value
+        : null;
+
+if (purpose === "jama_advance_repayment" && !jamaUdharId) {
+    alert("Please select the Jama advance you are repaying.");
+    return;
+}
+
+const { data, error } = await VasundharaDB.supabase.rpc(
+    "create_cash_transaction_v2",
+    {
+        p_account: account,
+        p_direction: direction,
+        p_amount: amount,
+        p_date: date,
+        p_purpose: purpose,
+        p_customer_mobile: mobile,
+        p_details: details,
+        p_jama_udhar_id: jamaUdharId
+    }
+);
 
         if (error) throw error;
 
@@ -495,12 +580,15 @@ async function renderCashPage() {
                             <option value="business_expense">Business expense</option>
                             <option value="house_expense">House expense</option>
                             <option value="advance_jama">Advance payment (Jama)</option>
+                            <option value="jama_advance_repayment">Jama advance repayment</option>
                             <option value="udhar_clearance">Udhar clearance</option>
+                            <option value="udhar_given">Udhar Given</option>
                             <option value="loss">Loss</option>
                             <option value="other">Other</option>
                         </select>
                     </label>
                 </div>
+                
 
                 <div id="cashCustomerSection" class="cash-form-grid" style="display:none;">
                     <label>
@@ -515,6 +603,14 @@ async function renderCashPage() {
                             placeholder="Name will appear automatically">
                     </label>
                 </div>
+                <div id="cashJamaRepaymentSection" class="cash-form-grid" style="display:none;">
+    <label>
+        Select Jama Advance to Repay
+        <select id="cashJamaRepaymentId">
+            <option value="">Select outstanding Jama advance</option>
+        </select>
+    </label>
+</div>
 
                 <label class="cash-full-field">
                     Details / Notes
